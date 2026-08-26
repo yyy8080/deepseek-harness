@@ -171,14 +171,14 @@ async function awaitHandshake(
   readyTimeoutMs: number,
 ): Promise<InstanceEndpoint> {
   const deadline = Date.now() + readyTimeoutMs
-  let exited = false
-  // `done` rejects only for spawn-level failures, which the start path below
-  // observes through this same loop's exit branch.
-  void handle.done.then(() => { exited = true }, () => { exited = true })
+  // `done` rejects only for spawn-level failures, which this loop's exit
+  // branch observes the same way as an ordinary early exit.
+  const worker = { exited: false }
+  void handle.done.then(() => { worker.exited = true }, () => { worker.exited = true })
   for (;;) {
     const origin = await readHandshake(layout.endpointFile)
     if (origin !== undefined) return { origin, root: layout.root }
-    if (exited) throw new Error(`worker for instance ${request.label} exited before publishing its endpoint`)
+    if (worker.exited) throw new Error(`worker for instance ${request.label} exited before publishing its endpoint`)
     if (request.signal.aborted) throw new Error(`start of instance ${request.label} was cancelled`)
     if (Date.now() >= deadline) {
       throw new Error(`worker for instance ${request.label} did not publish an endpoint within ${String(readyTimeoutMs)}ms`)

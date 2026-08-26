@@ -258,6 +258,7 @@
         "./packages/plan/*/src",
         "./packages/preset/*/src",
         "./packages/subagent/*/src",
+        "./packages/instance/*/src",
         "./packages/jobs/*/src",
         "./packages/experimental/*/src",
         "./packages/workflow/*/src",

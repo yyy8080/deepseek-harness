@@ -123,7 +123,12 @@ function viewOf(record: InstanceRecord): InstanceView {
     provider: record.provider,
     desired: record.desired,
     lifecycle: record.lifecycle,
-    ...record.runtime === undefined ? {} : { endpoint: record.runtime.endpoint },
+    // The endpoint is published exactly while the instance is running. A
+    // stopping instance still holds its runtime handle so the stop can reach
+    // it, but that endpoint no longer answers and must not be routed to.
+    ...record.runtime === undefined || record.lifecycle !== 'running'
+      ? {}
+      : { endpoint: record.runtime.endpoint },
     ...record.failure === undefined ? {} : { failure: record.failure },
   }
 }

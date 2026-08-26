@@ -43,7 +43,13 @@ import { FrameQueue } from './frame-queue.ts'
 import { globalize, localize, splitGlobalSessionId } from './routing.ts'
 import { WorkerApiClient } from './worker-client.ts'
 
-export { INSTANCE_ID_SEPARATOR, globalSessionId, splitGlobalSessionId } from './routing.ts'
+export {
+  globalize,
+  globalSessionId,
+  INSTANCE_ID_SEPARATOR,
+  localize,
+  splitGlobalSessionId,
+} from './routing.ts'
 export type { GlobalSessionId } from './routing.ts'
 export { WorkerApiClient } from './worker-client.ts'
 export { FrameQueue } from './frame-queue.ts'

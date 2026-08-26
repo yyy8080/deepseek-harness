@@ -1,0 +1,65 @@
+# Multi-runtime Web composition: every conversation runs in its own isolated
+# harness runtime, and the browser reaches all of them through one connection.
+#
+# This file is a PATCH OVERLAY over the web profile (dsh-base + dsh-web-app
+# bundle layers), not a tree: `dsh web --patch` applies it as one more sibling
+# patch list at the same include level, so these patches reach every bundle
+# row. A patch replaces the targeted row's whole `config`.
+#
+# What changes relative to the shipped web composition: the single-runtime API
+# gateway steps aside for the multiplexing one, and the instance seam plus its
+# local-process provider mount beside it. Everything else — the frontend, the
+# transport, the browser roster — is untouched, which is the point: the browser
+# does not know its conversations moved.
+
+# Off the default 3080 so this demo can run beside an ordinary `dsh web`.
+- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 3082
+
+# The single-runtime gateway and the multiplexing one both provide `ctx.apiProxy`.
+- id: api-gateway
+  disabled: true
+
+- insert:
+    - id: instances
+      name: '@deepseek-ai/dsh-instance'
+
+    # One child harness per instance, each with its own DSH_HOME and workspace
+    # under `$DSH_HOME/instances`. `removeStateOnStop: false` keeps each
+    # runtime's session logs readable after the demo exits.
+    #
+    # The command boots this checkout's BUILT `dsh` under plain Node, which is
+    # what every config subprocess in this repository does: run `pnpm run
+    # build` before the demo. An installation points `command` at its own `dsh`
+    # binary and drops the script argument.
+    - id: instance-local-process
+      name: '@deepseek-ai/dsh-instance-local-process'
+      config:
+        command: !!js process.execPath
+        args:
+          # Absolute: a worker's own working directory is its private
+          # workspace, not this checkout.
+          - !!js 'process.cwd() + "/apps/cli/lib/bin.js"'
+          - '--profile'
+          - 'worker'
+        root: !!js dshHomePath('instances')
+        # The worker's environment is scrubbed by the subprocess seam, so the
+        # model credential is forwarded by name rather than inherited.
+        forwardEnv:
+          - 'DEEPSEEK_API_KEY'
+          - 'DEEPSEEK_BASE_URL'
+        readyTimeoutMs: 120000
+        stopGraceMs: 5000
+        removeStateOnStop: false
+
+    # Placement is `per-conversation`: clicking "new chat" allocates a runtime.
+    # Switch to `shared` to put every conversation in one runtime instead.
+    - id: instance-gateway
+      name: '@deepseek-ai/dsh-instance-gateway'
+      config:
+        provider: 'local-process'
+        placement: 'per-conversation'
+        maxInstances: 4
+        requestTimeoutMs: 120000
