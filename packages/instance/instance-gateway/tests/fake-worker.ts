@@ -12,7 +12,7 @@ import { WebSocketServer, type WebSocket } from 'ws'
 import type { HostFrame, MuxFrame, RpcResult } from '@deepseek-ai/dsh-host-apiproxy'
 
 /** One unary call the worker received. */
-export interface RecordedCall {
+interface RecordedCall {
   method: string
   payload: unknown
 }

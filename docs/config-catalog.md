@@ -931,8 +931,9 @@ export interface Config {
    * Arguments handed to {@link command}. They must boot a harness profile
    * that serves `/api` on loopback and performs the endpoint handshake;
    * `@deepseek-ai/dsh-worker` is the bundle that does.
+   * @default []
    */
-  args: string[]
+  args?: string[]
   /**
    * Absolute directory under which each instance's private tree is created
    * (`<root>/<instanceId>/home` and `<root>/<instanceId>/workspace`). A
