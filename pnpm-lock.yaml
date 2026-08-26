@@ -890,6 +890,9 @@ importers:
       '@deepseek-ai/dsh-goal':
         specifier: workspace:^
         version: link:../../goal/goal
+      '@deepseek-ai/dsh-host-connector-portal':
+        specifier: workspace:^
+        version: link:../../host/connector-portal
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:^
         version: link:../../host/plugin-inventory
@@ -1374,6 +1377,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-settings':
         specifier: workspace:^
         version: link:../../client/ui-settings
+      '@deepseek-ai/dsh-client-ui-settings-connectors':
+        specifier: workspace:^
+        version: link:../../client/ui-settings-connectors
       '@deepseek-ai/dsh-client-ui-settings-general':
         specifier: workspace:^
         version: link:../../client/ui-settings-general
@@ -1419,6 +1425,9 @@ importers:
       '@deepseek-ai/dsh-code-runtime-worker-thread':
         specifier: workspace:^
         version: link:../../code-runtime/code-runtime-worker-thread
+      '@deepseek-ai/dsh-connector':
+        specifier: workspace:^
+        version: link:../../connector/connector
       '@deepseek-ai/dsh-cordis-client-runner':
         specifier: workspace:^
         version: link:../../extensions/cordis-client-runner
@@ -1434,6 +1443,9 @@ importers:
       '@deepseek-ai/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../../host/apiproxy
+      '@deepseek-ai/dsh-host-connector-portal':
+        specifier: workspace:^
+        version: link:../../host/connector-portal
       '@deepseek-ai/dsh-host-directory-picker-auto':
         specifier: workspace:^
         version: link:../../host/directory-picker-auto
@@ -2594,6 +2606,48 @@ importers:
       react:
         specifier: ^18.2.0
         version: 18.3.1
+
+  packages/client/ui-settings-connectors:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: workspace:^
+        version: link:../../api/remotes
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:^
+        version: link:../locale
+      '@deepseek-ai/dsh-client-runtime':
+        specifier: workspace:^
+        version: link:../runtime
+      '@deepseek-ai/dsh-client-test-runtime':
+        specifier: workspace:^
+        version: link:../../test-support/client-runtime
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: workspace:^
+        version: link:../ui-primitives
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: workspace:^
+        version: link:../ui-settings
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:^
+        version: link:../ui-slots
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@testing-library/react':
+        specifier: ^16.1.0
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.2.0
+        version: 18.3.1(react@18.3.1)
 
   packages/client/ui-settings-general:
     dependencies:

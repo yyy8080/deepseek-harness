@@ -1,0 +1,68 @@
+/** Copy dictionaries for the Connectors settings page. */
+
+/** Simplified Chinese dictionary and key source of truth. */
+export const zh = {
+  nav: '连接器',
+  intro: '把另一台机器接入会话：下载对应系统的启动脚本并运行，那台机器就会主动连回本部署。',
+  warning: '运行脚本的机器会把文件读写和命令执行权限交给本部署，只在你自己信任的机器上运行。',
+  platformLinux: 'Linux',
+  platformMacos: 'macOS',
+  platformWindows: 'Windows',
+  download: '下载连接器',
+  downloading: '正在生成…',
+  issueFailed: '生成连接器失败，请重试。',
+  ticketHeading: '在目标机器上运行',
+  ticketHint: '脚本内含一次性令牌，请勿转发。下载链接将在 {expires} 后失效。',
+  copyCommand: '复制命令',
+  copied: '已复制',
+  downloadFile: '下载脚本文件',
+  needsNode: '目标机器需要 Node 22 或更高版本。',
+  listHeading: '已登记的机器',
+  listEmpty: '还没有登记任何机器。',
+  listFailed: '暂时无法读取连接器列表。',
+  retry: '重试',
+  refresh: '刷新',
+  statusIssued: '等待下载',
+  statusDownloaded: '等待连接',
+  statusAttached: '已连接',
+  statusExpired: '已过期',
+  revoke: '移除',
+  connectorIdLabel: '连接器 ID',
+  workdirLabel: '工作目录',
+  bindHint: '在会话中把 fs / 命令执行绑定到该连接器时使用这个 ID。',
+} satisfies Record<string, string>
+
+/** Connectors page locale key union. */
+export type ConnectorsLocaleKey = keyof typeof zh
+
+/** English dictionary checked against the Chinese key set. */
+export const en = {
+  nav: 'Connectors',
+  intro: 'Bring another machine into a conversation: download its start script, run it, and that machine dials back to this deployment.',
+  warning: 'The machine you run the script on hands this deployment read, write, and command access. Only run it on a machine you trust.',
+  platformLinux: 'Linux',
+  platformMacos: 'macOS',
+  platformWindows: 'Windows',
+  download: 'Download connector',
+  downloading: 'Generating…',
+  issueFailed: 'Generating the connector failed. Try again.',
+  ticketHeading: 'Run this on the target machine',
+  ticketHint: 'The script carries a one-time token — do not forward it. The download link stops answering after {expires}.',
+  copyCommand: 'Copy command',
+  copied: 'Copied',
+  downloadFile: 'Download the script',
+  needsNode: 'The target machine needs Node 22 or newer.',
+  listHeading: 'Enrolled machines',
+  listEmpty: 'No machine is enrolled yet.',
+  listFailed: 'Connectors are temporarily unavailable.',
+  retry: 'Retry',
+  refresh: 'Refresh',
+  statusIssued: 'Waiting for download',
+  statusDownloaded: 'Waiting to connect',
+  statusAttached: 'Connected',
+  statusExpired: 'Expired',
+  revoke: 'Remove',
+  connectorIdLabel: 'Connector id',
+  workdirLabel: 'Working directory',
+  bindHint: 'Bind a session\u2019s filesystem and commands to this id to run its work on that machine.',
+} satisfies Record<ConnectorsLocaleKey, string>
