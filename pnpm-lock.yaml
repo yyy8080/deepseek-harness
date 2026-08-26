@@ -475,6 +475,15 @@ importers:
       '@deepseek-ai/dsh-compaction-tool-result-pruner':
         specifier: workspace:*
         version: link:../packages/compaction/compaction-tool-result-pruner
+      '@deepseek-ai/dsh-connector':
+        specifier: workspace:*
+        version: link:../packages/connector/connector
+      '@deepseek-ai/dsh-connector-host':
+        specifier: workspace:*
+        version: link:../packages/connector/connector-host
+      '@deepseek-ai/dsh-connector-tcp':
+        specifier: workspace:*
+        version: link:../packages/connector/connector-tcp
       '@deepseek-ai/dsh-cordis-host-runner':
         specifier: workspace:*
         version: link:../packages/extensions/cordis-host-runner
@@ -490,6 +499,9 @@ importers:
       '@deepseek-ai/dsh-experimental-tool-agent-team':
         specifier: workspace:*
         version: link:../packages/experimental/tool-agent-team
+      '@deepseek-ai/dsh-fs-connector':
+        specifier: workspace:*
+        version: link:../packages/connector/fs-connector
       '@deepseek-ai/dsh-fs-e2b':
         specifier: workspace:*
         version: link:../packages/e2b/fs-e2b
@@ -640,6 +652,9 @@ importers:
       '@deepseek-ai/dsh-subagent-spawn-in-process':
         specifier: workspace:*
         version: link:../packages/subagent/subagent-spawn-in-process
+      '@deepseek-ai/dsh-subprocess-connector':
+        specifier: workspace:*
+        version: link:../packages/connector/subprocess-connector
       '@deepseek-ai/dsh-subprocess-e2b':
         specifier: workspace:*
         version: link:../packages/e2b/subprocess-e2b

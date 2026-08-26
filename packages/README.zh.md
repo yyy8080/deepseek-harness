@@ -19,6 +19,7 @@ npm scope 为 `@deepseek-ai/dsh-*`；Cordis `Service` 子类和函数插件通�
 | [`identity/`](identity/README.zh.md) | 共享匿名身份 | 产品：稳定 API |
 | [`llm/`](llm/README.zh.md) | LLM（大语言模型）能力系列：抽象服务 + 提供方适配器 | 产品：稳定 API |
 | [`e2b/`](e2b/README.zh.md) | E2B 提供方 | POC |
+| [`connector/`](connector/README.zh.md) | connector 能力家族：注册表 seam、transport，以及异地执行世界的 fs／subprocess 提供方 | Product — stable API |
 | [`subprocess/`](subprocess/README.zh.md) | 子进程能力系列：Service Definition + 本地进程树提供方 | 产品：稳定 API |
 | [`shell/`](shell/README.zh.md) | Bash 能力系列：执行器 seam、本地实现、面向模型的工具 | 产品：稳定 API |
 | [`terminal/`](terminal/README.zh.md) | 持久 PTY 能力系列：限定所有者范围的会话、本地实现和面向模型的工具 | 产品：稳定 API |

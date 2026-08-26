@@ -53,7 +53,11 @@ function secretsMatch(offered: string, expected: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right)
 }
 
-/** Project a thrown value onto the wire so the client can rebuild its class. */
+/**
+ * Project a thrown value onto the wire so the client can rebuild its class.
+ * @param error - whatever the operation threw.
+ * @returns the failure facts, tagged with the class the client reconstructs.
+ */
 export function wireError(error: unknown): ConnectorWireError {
   if (error instanceof FsError) return { kind: 'fs', code: error.code, message: error.message }
   if (error instanceof ConnectorError) return { kind: 'connector', code: error.code, message: error.message }
