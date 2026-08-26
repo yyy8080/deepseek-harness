@@ -108,12 +108,21 @@ function wireOptionalRecord(
   return wireObject<Record<string, string>>(params, index, method)
 }
 
+/**
+ * One process the client is observing. The slot is reserved when the spawn
+ * call arrives and holds its handle once the target published one, so a
+ * failure reported before the spawn round-trip returns cannot resurrect an
+ * entry the notification already retired.
+ */
+interface LiveProcess {
+  handle?: ConnectorProcessHandle
+}
+
 /** Per-client state: in-flight cancellation and the processes it owns. */
 class ConnectorSession {
   private readonly decoder = new ConnectorFrameDecoder()
   private readonly inflight = new Map<number, AbortController>()
-  private readonly processes = new Map<number, ConnectorProcessHandle>()
-  private nextHandle = 1
+  private readonly processes = new Map<number, LiveProcess>()
   private authenticated = false
 
   constructor(
@@ -141,7 +150,7 @@ class ConnectorSession {
   release(): void {
     for (const controller of this.inflight.values()) controller.abort()
     this.inflight.clear()
-    for (const handle of this.processes.values()) void handle.terminate().catch(() => {})
+    for (const live of this.processes.values()) void live.handle?.terminate().catch(() => {})
     this.processes.clear()
   }
 
@@ -228,7 +237,7 @@ class ConnectorSession {
           signal,
         )
       case 'proc.spawn':
-        return this.spawn(wireObject<ConnectorSpawnSpec>(params, 0, method))
+        return this.spawn(wireObject<ConnectorSpawnSpec>(params, 0, method), wireNumber(params, 1, method))
       case 'proc.write':
         await this.process(wireNumber(params, 0, method)).write(wireString(params, 1, method))
         return null
@@ -243,33 +252,41 @@ class ConnectorSession {
     }
   }
 
-  private process(handle: number): ConnectorProcessHandle {
-    const process = this.processes.get(handle)
-    if (process === undefined) {
-      throw new ConnectorError(`connector process ${handle} is not live on this connection`, 'CONNECTOR_PROTOCOL')
+  private process(id: number): ConnectorProcessHandle {
+    const handle = this.processes.get(id)?.handle
+    if (handle === undefined) {
+      throw new ConnectorError(`connector process ${id} is not live on this connection`, 'CONNECTOR_PROTOCOL')
     }
-    return process
+    return handle
   }
 
-  private async spawn(spec: ConnectorSpawnSpec): Promise<{ handle: number; pid: number }> {
-    const id = this.nextHandle
-    this.nextHandle += 1
-    const handle = await this.link.processes.spawn(spec, {
-      data: (stream, base64) => { this.send({ t: 'event', handle: id, kind: 'data', stream, base64 }) },
-      exit: (outcome) => {
-        this.send({ t: 'event', handle: id, kind: 'exit', exitCode: outcome.exitCode, signal: outcome.signal })
-      },
-      failed: (message) => {
-        this.processes.delete(id)
-        this.send({ t: 'event', handle: id, kind: 'failed', message })
-      },
-      gone: () => {
-        this.processes.delete(id)
-        this.send({ t: 'event', handle: id, kind: 'gone' })
-      },
-    })
-    this.processes.set(id, handle)
-    return { handle: id, pid: handle.pid }
+  private async spawn(spec: ConnectorSpawnSpec, id: number): Promise<{ pid: number }> {
+    if (this.processes.has(id)) {
+      throw new ConnectorError(`connector process ${id} is already live on this connection`, 'CONNECTOR_PROTOCOL')
+    }
+    const live: LiveProcess = {}
+    this.processes.set(id, live)
+    const retire = (): void => { this.processes.delete(id) }
+    try {
+      live.handle = await this.link.processes.spawn(spec, {
+        data: (stream, base64) => { this.send({ t: 'event', handle: id, kind: 'data', stream, base64 }) },
+        exit: (outcome) => {
+          this.send({ t: 'event', handle: id, kind: 'exit', exitCode: outcome.exitCode, signal: outcome.signal })
+        },
+        failed: (message) => {
+          retire()
+          this.send({ t: 'event', handle: id, kind: 'failed', message })
+        },
+        gone: () => {
+          retire()
+          this.send({ t: 'event', handle: id, kind: 'gone' })
+        },
+      })
+    } catch (error: unknown) {
+      retire()
+      throw error
+    }
+    return { pid: live.handle.pid }
   }
 }
 

@@ -73,6 +73,7 @@ class ConnectorTcpTransport {
   private readonly pending = new Map<number, Pending>()
   private readonly processes = new Map<number, RemoteProcess>()
   private nextCall = 1
+  private nextProcess = 1
   private failure: Error | undefined
 
   constructor(private readonly socket: Socket, private readonly id: string) {
@@ -120,12 +121,25 @@ class ConnectorTcpTransport {
   }
 
   /**
-   * Start observing a process the agent just published.
-   * @param handle - the agent-assigned process identifier.
+   * Claim a process identifier and start observing it, before the spawn that
+   * uses it is sent. The client owns the identifier precisely so no
+   * notification can arrive ahead of its observer.
    * @param events - callbacks receiving that process's notifications.
+   * @returns the identifier to send with the spawn.
    */
-  observe(handle: number, events: ConnectorProcessEvents): void {
+  observe(events: ConnectorProcessEvents): number {
+    const handle = this.nextProcess
+    this.nextProcess += 1
     this.processes.set(handle, { events, settled: false })
+    return handle
+  }
+
+  /**
+   * Stop observing a process whose spawn never reached the target.
+   * @param handle - the identifier {@link observe} returned.
+   */
+  unobserve(handle: number): void {
+    this.processes.delete(handle)
   }
 
   /**
@@ -292,9 +306,14 @@ class TcpProcessOperations implements ConnectorProcessOperations {
   }
 
   async spawn(spec: ConnectorSpawnSpec, events: ConnectorProcessEvents): Promise<ConnectorProcessHandle> {
-    const published = await this.transport.call('proc.spawn', [spec], undefined) as { handle: number; pid: number }
-    this.transport.observe(published.handle, events)
-    return new TcpProcessHandle(this.transport, published.handle, published.pid)
+    const handle = this.transport.observe(events)
+    try {
+      const published = await this.transport.call('proc.spawn', [spec, handle], undefined) as { pid: number }
+      return new TcpProcessHandle(this.transport, handle, published.pid)
+    } catch (error: unknown) {
+      this.transport.unobserve(handle)
+      throw error
+    }
   }
 }
 

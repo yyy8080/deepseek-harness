@@ -10,6 +10,7 @@
  */
 
 import { Buffer } from 'node:buffer'
+import { finished } from 'node:stream/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { ConnectorId } from '@deepseek-ai/dsh-connector'
 import type {
@@ -39,10 +40,15 @@ export interface ConnectorHostOptions {
   workdir: string
 }
 
-/** The operating-system family of the machine this process runs on. */
-export function hostConnectorOs(): ConnectorOs {
-  if (process.platform === 'win32') return 'windows'
-  return process.platform === 'darwin' ? 'macos' : 'linux'
+/**
+ * The connector OS family one Node platform belongs to. Every platform outside
+ * the two named families is served by the POSIX path dialect and tooling.
+ * @param platform - the platform to classify; defaults to this process's.
+ * @returns the connector OS family clients see in the handshake.
+ */
+export function hostConnectorOs(platform: NodeJS.Platform = process.platform): ConnectorOs {
+  if (platform === 'win32') return 'windows'
+  return platform === 'darwin' ? 'macos' : 'linux'
 }
 
 /** Rebuild the `FsTarget` a local filesystem operation expects from wire fields. */
@@ -67,15 +73,19 @@ function localStdin(stdin: ConnectorSpawnSpec['stdin']): SubprocessStdinMode {
   return { data: Buffer.from(stdin.base64, 'base64').toString('utf8') }
 }
 
-/** Resolve once the stream has ended, or immediately when it was never piped. */
-function whenEnded(handle: SubprocessHandle, stream: 'stdout' | 'stderr'): Promise<void> {
+/**
+ * Resolve once the stream has delivered its last chunk. `finished` also
+ * answers for a stream that already ended, which the ordinary case is: `done`
+ * settles on the child's `close`, after both pipes are finished.
+ */
+async function whenEnded(handle: SubprocessHandle, stream: 'stdout' | 'stderr'): Promise<void> {
   const readable = handle[stream]
-  if (readable === undefined) return Promise.resolve()
-  return new Promise<void>((resolve) => {
-    readable.once('end', resolve)
-    readable.once('close', resolve)
-    readable.once('error', resolve)
-  })
+  // The host always spawns both output streams piped and owns the readables it gets back, so
+  // neither an absent stream nor a premature destroy is reachable from a client.
+  /* v8 ignore next */
+  if (readable === undefined) return
+  /* v8 ignore next */
+  await finished(readable).catch(() => undefined)
 }
 
 /** Filesystem operations backed by the private local provider. */

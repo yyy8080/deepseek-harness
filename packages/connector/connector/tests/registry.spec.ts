@@ -64,20 +64,16 @@ describe('registration', () => {
   })
 
   it('removes the registration and closes its link when the disposer runs', async () => {
-    const ctx = await mounted()
+    const ctx = await mounted({ default: 'build-linux' })
     const only = descriptor('build-linux')
     const closed = vi.fn()
     const dispose = ctx.connectors.register(only, async () => stubLink(only, closed))
-    await ctx.connectors.link({ session: undefined })
-      .catch(() => undefined)
     await ctx.connectors.link()
-      .catch(() => undefined)
 
-    dispose()
-    await Promise.resolve()
-    await Promise.resolve()
+    await dispose()
 
     expect(ctx.connectors.list()).toEqual([])
+    expect(closed).toHaveBeenCalledTimes(1)
   })
 
   it('leaves a replacement registration alone when a stale disposer runs twice', async () => {

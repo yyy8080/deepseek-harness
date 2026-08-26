@@ -97,10 +97,14 @@ export interface ConnectorWireError {
   message: string
 }
 
-/** Server-initiated notification about one running process. */
+/**
+ * Server-initiated notification about one running process. The identifier is
+ * assigned by the CLIENT in the `proc.spawn` call, so the client can install
+ * its observer before the agent can deliver the first notification.
+ */
 export interface ConnectorEventFrame {
   t: 'event'
-  /** Agent-assigned identifier of the process the notification is about. */
+  /** Client-assigned identifier of the process the notification is about. */
   handle: number
   /** Which observation this frame carries. */
   kind: 'data' | 'exit' | 'failed' | 'gone'
