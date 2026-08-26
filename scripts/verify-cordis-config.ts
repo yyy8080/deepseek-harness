@@ -229,7 +229,12 @@ function validateExampleResolution(): string[] {
   const dependencies = exampleManifest.dependencies ?? {}
   const localPackages = localPackageDirectories()
   const rootReferences = rootProjectReferences()
-  const exampleReferences = pluginReferences.filter(reference => reference.file.startsWith('examples/') && !appOverlayFiles.has(reference.file))
+  // A Bundle under examples/ carries its own dependencies into the profile that
+  // installs it, so validateAppResolution checks its patch instead.
+  const bundlePatchFiles = new Set(bundlePatches().keys())
+  const exampleReferences = pluginReferences.filter(reference => reference.file.startsWith('examples/')
+    && !appOverlayFiles.has(reference.file)
+    && !bundlePatchFiles.has(reference.file))
   violations.push(...missingPluginDependencies(exampleReferences, dependencies, 'examples/package.json'))
   const requiredPackages = new Set(exampleReferences.map(reference => packageNameFromSpecifier(reference.name)))
 
@@ -249,7 +254,6 @@ function validateExampleResolution(): string[] {
 
 function validateAppResolution(): string[] {
   const violations: string[] = []
-  const bundleManifests = bundleManifestPaths()
   // App overlays (and any config left under apps/cli/config) resolve from the
   // dsh app's own dependency surface — the profile module fallback mirrors it.
   const appDependencies = {
@@ -266,12 +270,7 @@ function validateAppResolution(): string[] {
   violations.push(...missingPluginDependencies(appReferences, appDependencies, 'apps/cli/package.json or a bundle manifest'))
   // Each bundle's patch rows must resolve from that bundle's own dependencies:
   // per-layer resolution anchors on the bundle package directory.
-  for (const manifestPath of bundleManifests) {
-    const bundleDir = manifestPath.replace(/\/package\.json$/, '')
-    const manifest = readManifest(manifestPath)
-    const patch = manifest.dsh?.bundle?.patch
-    if (typeof patch !== 'string') continue
-    const patchFile = relative(root, resolve(root, bundleDir, patch)).replaceAll('\\', '/')
+  for (const [patchFile, { manifestPath, manifest }] of bundlePatches()) {
     const references = pluginReferences.filter(reference => reference.file === patchFile)
     violations.push(...bundlePluginDependencyErrors(manifestPath, manifest, references))
   }
@@ -279,15 +278,34 @@ function validateAppResolution(): string[] {
 }
 
 /**
- * Discover workspace Bundle packages from their manifest declaration.
+ * Discover Bundle packages from their manifest declaration. Example Bundles are
+ * included: a packable sample plugin is a Bundle that happens to live under
+ * `examples/`, and its patch resolves from the profile that installs it.
  * @param repoRoot Repository root to scan.
  * @returns Sorted slash-normalized repository-relative package manifest paths.
  */
 export function bundleManifestPaths(repoRoot: string = root): string[] {
-  return globSync('packages/*/*/package.json', { cwd: repoRoot })
+  return globSync(['packages/*/*/package.json', 'examples/*/*/package.json'], { cwd: repoRoot })
     .filter(path => typeof readManifest(path, repoRoot).dsh?.bundle?.patch === 'string')
     .map(path => path.replaceAll('\\', '/'))
     .sort()
+}
+
+/**
+ * Every Bundle's patch file with the manifest that declares it.
+ * @returns repository-relative patch paths mapped to their declaring Bundle.
+ */
+function bundlePatches(): Map<string, { manifestPath: string; manifest: PackageManifest }> {
+  const patches = new Map<string, { manifestPath: string; manifest: PackageManifest }>()
+  for (const manifestPath of bundleManifestPaths()) {
+    const manifest = readManifest(manifestPath)
+    const patch = manifest.dsh?.bundle?.patch
+    /* v8 ignore next -- bundleManifestPaths only yields manifests whose patch is a string. */
+    if (typeof patch !== 'string') continue
+    const bundleDir = manifestPath.replace(/\/package\.json$/, '')
+    patches.set(relative(root, resolve(root, bundleDir, patch)).replaceAll('\\', '/'), { manifestPath, manifest })
+  }
+  return patches
 }
 
 /**

@@ -82,7 +82,7 @@ async function withRegistry<T>(index: string, read: (registry: PluginRegistry) =
 }
 
 /** Split a `<package>[@version]` argument; a scoped name's leading `@` is not a separator. */
-export function splitVersioned(argument: string): { id: PluginId; version?: string } {
+function splitVersioned(argument: string): { id: PluginId; version?: string } {
   const at = argument.lastIndexOf('@')
   if (at <= 0) return { id: pluginId(argument) }
   return { id: pluginId(argument.slice(0, at)), version: argument.slice(at + 1) }
