@@ -337,38 +337,64 @@ class TcpProcessOperations implements ConnectorProcessOperations {
 }
 
 /** Reject the declaration when the agent describes a different machine. */
-function checkAgreement(options: ConnectorTcpOptions, os: ConnectorOs, workdir: string): void {
-  if (os !== options.os) {
+function checkAgreement(
+  id: string,
+  declared: { os: ConnectorOs; workdir: string },
+  reported: { os: ConnectorOs; workdir: string },
+): void {
+  if (reported.os !== declared.os) {
     throw new ConnectorError(
-      `connector ${JSON.stringify(options.id)} is declared as ${options.os} but its agent reports ${os}`,
+      `connector ${JSON.stringify(id)} is declared as ${declared.os} but its agent reports ${reported.os}`,
       'CONNECTOR_UNAVAILABLE',
     )
   }
-  if (workdir !== options.workdir) {
+  if (reported.workdir !== declared.workdir) {
     throw new ConnectorError(
-      `connector ${JSON.stringify(options.id)} is declared with workdir ${JSON.stringify(options.workdir)} but its agent reports ${JSON.stringify(workdir)}`,
+      `connector ${JSON.stringify(id)} is declared with workdir ${JSON.stringify(declared.workdir)} but its agent reports ${JSON.stringify(reported.workdir)}`,
       'CONNECTOR_UNAVAILABLE',
     )
   }
 }
 
+/** Everything the handshake over one already-connected socket needs. */
+export interface ConnectorSocketOptions {
+  /** Identifier sessions bind to; also what failures name. */
+  id: string
+  /** Shared secret the agent was started with. */
+  token: string
+  /** Deadline for the handshake round trip. */
+  handshakeTimeoutMs: number
+  /**
+   * Declared facts the agent must confirm. Omitted when the agent's own
+   * `ready` frame is the first statement of them — the attach case, where the
+   * target describes itself rather than answering a deployment declaration.
+   */
+  declared?: { os: ConnectorOs; workdir: string }
+}
+
 /**
- * Open one link to a connector agent over TCP.
- * @param options - address, secret, and the declared facts the agent must confirm.
+ * Complete the connector handshake over a socket the caller already connected,
+ * and build the link over it. Both transports share this: a dialled TCP socket
+ * and an upgraded HTTP connection differ only in how they were opened.
+ * @param socket - the connected socket, before any frame is written.
+ * @param options - identity, secret, deadline, and the facts to confirm.
  * @returns the live link, after the handshake succeeds.
  */
-export async function openConnectorTcpLink(options: ConnectorTcpOptions): Promise<ConnectorLink> {
-  const socket = connect({ host: options.host, port: options.port })
+export async function openConnectorLinkOverSocket(
+  socket: Socket,
+  options: ConnectorSocketOptions,
+): Promise<ConnectorLink> {
   socket.setNoDelay(true)
   const transport = new ConnectorTcpTransport(socket, options.id)
   const timer = setTimeout(() => {
     socket.destroy(new ConnectorError(
-      `connector ${JSON.stringify(options.id)} did not answer within ${options.connectTimeoutMs}ms`,
+      `connector ${JSON.stringify(options.id)} did not answer within ${options.handshakeTimeoutMs}ms`,
       'CONNECTOR_UNAVAILABLE',
     ))
-  }, options.connectTimeoutMs)
+  }, options.handshakeTimeoutMs)
+  let ready: { os: ConnectorOs; workdir: string }
   try {
-    const ready = await new Promise<{ os: ConnectorOs; workdir: string }>((resolve, reject) => {
+    ready = await new Promise<{ os: ConnectorOs; workdir: string }>((resolve, reject) => {
       transport.onHandshakeFrame = (frame): void => {
         if (frame.t === 'ready') {
           if (frame.protocol !== CONNECTOR_PROTOCOL_VERSION) {
@@ -389,11 +415,13 @@ export async function openConnectorTcpLink(options: ConnectorTcpOptions): Promis
           : new ConnectorError(`connector ${JSON.stringify(options.id)} answered the handshake with a ${frame.t} frame`, 'CONNECTOR_PROTOCOL'))
       }
       transport.onLost = reject
-      socket.once('connect', () => {
+      const hello = (): void => {
         transport.write({ t: 'hello', protocol: CONNECTOR_PROTOCOL_VERSION, token: options.token })
-      })
+      }
+      if (socket.connecting) socket.once('connect', hello)
+      else hello()
     })
-    checkAgreement(options, ready.os, ready.workdir)
+    if (options.declared !== undefined) checkAgreement(options.id, options.declared, ready)
   } catch (error: unknown) {
     socket.destroy()
     throw error
@@ -403,8 +431,8 @@ export async function openConnectorTcpLink(options: ConnectorTcpOptions): Promis
   }
   const descriptor: ConnectorDescriptor = {
     id: ConnectorId(options.id),
-    os: options.os,
-    workdir: options.workdir,
+    os: ready.os,
+    workdir: ready.workdir,
   }
   return {
     descriptor,
@@ -415,4 +443,18 @@ export async function openConnectorTcpLink(options: ConnectorTcpOptions): Promis
       return Promise.resolve()
     },
   }
+}
+
+/**
+ * Open one link to a connector agent over TCP.
+ * @param options - address, secret, and the declared facts the agent must confirm.
+ * @returns the live link, after the handshake succeeds.
+ */
+export async function openConnectorTcpLink(options: ConnectorTcpOptions): Promise<ConnectorLink> {
+  return openConnectorLinkOverSocket(connect({ host: options.host, port: options.port }), {
+    id: options.id,
+    token: options.token,
+    handshakeTimeoutMs: options.connectTimeoutMs,
+    declared: { os: options.os, workdir: options.workdir },
+  })
 }
