@@ -79,15 +79,10 @@ class ConnectorTcpTransport {
   constructor(private readonly socket: Socket, private readonly id: string) {
     socket.setEncoding('utf8')
     socket.on('data', (chunk: string) => { this.receive(chunk) })
-    socket.on('error', (error: Error) => { this.fail(error) })
+    socket.on('error', (error: Error) => { this.fail(this.transportFailure(error)) })
     socket.on('close', () => {
       this.fail(new ConnectorError(`connector ${JSON.stringify(this.id)} closed the connection`, 'CONNECTOR_UNAVAILABLE'))
     })
-  }
-
-  /** Whether this transport has already lost its socket. */
-  get lost(): Error | undefined {
-    return this.failure
   }
 
   /**
@@ -95,6 +90,13 @@ class ConnectorTcpTransport {
    * The transport installs its own reader as soon as the handshake resolves.
    */
   onHandshakeFrame: ((frame: ConnectorFrame) => void) | undefined
+
+  /**
+   * Invoked at most once, with the failure every later call will throw. The
+   * opener uses it so a socket lost mid-handshake reports the same connector
+   * failure a socket lost mid-call does, rather than a raw libuv code.
+   */
+  onLost: ((error: Error) => void) | undefined
 
   /**
    * Send one call and await its answer.
@@ -143,11 +145,13 @@ class ConnectorTcpTransport {
   }
 
   /**
-   * Send a frame.
+   * Send a frame. A write to an already-dropped socket reports itself through
+   * the socket's `error` event, which this transport has already turned into
+   * the failure every later call throws.
    * @param frame - the frame to write.
    */
   write(frame: ConnectorFrame): void {
-    if (!this.socket.destroyed) this.socket.write(encodeFrame(frame))
+    this.socket.write(encodeFrame(frame))
   }
 
   /** Drop the socket; pending calls and live processes settle as failures. */
@@ -214,6 +218,20 @@ class ConnectorTcpTransport {
     }
   }
 
+  /**
+   * Restate a socket-level failure as a connector failure, so callers of the
+   * seam route on `CONNECTOR_UNAVAILABLE` instead of on libuv codes. A failure
+   * this transport itself raised — a handshake deadline, a decode refusal —
+   * already carries the right code and passes through unchanged.
+   */
+  private transportFailure(error: Error): Error {
+    if (error instanceof ConnectorError) return error
+    return new ConnectorError(
+      `connector ${JSON.stringify(this.id)} lost its connection: ${error.message}`,
+      'CONNECTOR_UNAVAILABLE',
+    )
+  }
+
   private fail(error: Error): void {
     if (this.failure !== undefined) return
     this.failure = error
@@ -224,6 +242,7 @@ class ConnectorTcpTransport {
       if (!process.settled) process.events.failed(error.message)
       else process.events.gone()
     }
+    this.onLost?.(error)
   }
 }
 
@@ -369,13 +388,7 @@ export async function openConnectorTcpLink(options: ConnectorTcpOptions): Promis
           ? fromWireError(frame.error)
           : new ConnectorError(`connector ${JSON.stringify(options.id)} answered the handshake with a ${frame.t} frame`, 'CONNECTOR_PROTOCOL'))
       }
-      socket.once('error', reject)
-      socket.once('close', () => {
-        reject(transport.lost ?? new ConnectorError(
-          `connector ${JSON.stringify(options.id)} closed the connection during the handshake`,
-          'CONNECTOR_UNAVAILABLE',
-        ))
-      })
+      transport.onLost = reject
       socket.once('connect', () => {
         transport.write({ t: 'hello', protocol: CONNECTOR_PROTOCOL_VERSION, token: options.token })
       })
@@ -385,6 +398,7 @@ export async function openConnectorTcpLink(options: ConnectorTcpOptions): Promis
     socket.destroy()
     throw error
   } finally {
+    transport.onLost = undefined
     clearTimeout(timer)
   }
   const descriptor: ConnectorDescriptor = {

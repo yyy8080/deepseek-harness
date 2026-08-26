@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { ConnectorLink, ConnectorProcessEvents } from '@deepseek-ai/dsh-connector'
 import { CONNECTOR_PROTOCOL_VERSION, encodeFrame } from '@deepseek-ai/dsh-connector/protocol'
-import { hostConnectorOs, serveConnector } from '@deepseek-ai/dsh-connector-host'
+import { hostConnectorOs, serveConnector, wireError } from '@deepseek-ai/dsh-connector-host'
 import type { ConnectorServer } from '@deepseek-ai/dsh-connector-host'
 import { openConnectorTcpLink } from '@deepseek-ai/dsh-connector-tcp'
 import type { ConnectorTcpOptions } from '@deepseek-ai/dsh-connector-tcp'
@@ -161,6 +161,7 @@ describe('remote filesystem', () => {
 
     await expect(link.files.stat(join(dir, 'absent.txt'), undefined)).resolves.toBeUndefined()
     await expect(link.files.lstat('absent.txt', dir, undefined)).resolves.toBeUndefined()
+    await expect(link.files.lstat(join(dir, 'absent.txt'), undefined, undefined)).resolves.toBeUndefined()
   })
 
   it('rebuilds the target filesystem error class on this side', async () => {
@@ -283,6 +284,29 @@ describe('remote processes', () => {
     expect(observer.failures).toHaveLength(1)
     await expect(link.files.stat(dir, undefined)).rejects.toMatchObject({ code: 'CONNECTOR_UNAVAILABLE' })
   })
+
+  it('abandons the work of a client that leaves mid-call', async () => {
+    const dir = workdir()
+    const server = await agent(dir)
+    const link = await openConnectorTcpLink(options(server.port, dir))
+    const observer = recorder()
+    const handle = await link.processes.spawn(
+      { argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'], cwd: dir, stdin: 'pipe', graceMs: 50 },
+      observer.events,
+    )
+    // Far larger than any platform's pipe buffer, and the child never reads, so
+    // the write cannot finish. The stat behind it is answered only once the
+    // agent has dequeued the write, which proves the write is in flight.
+    const blocked = handle.write(Buffer.alloc(1024 * 1024, 0x61).toString('base64'))
+    await link.files.stat(dir, undefined)
+
+    await link.close()
+
+    await expect(blocked).rejects.toMatchObject({ code: 'CONNECTOR_UNAVAILABLE' })
+    // The agent stops cleanly only if it abandoned that call and the tree it
+    // started; a leaked tree would hold subprocess disposal open.
+    await expect(server.close()).resolves.toBeUndefined()
+  })
 })
 
 describe('protocol violations', () => {
@@ -343,6 +367,39 @@ describe('protocol violations', () => {
     await expect(raw(server.port, [hello, call])).resolves.toContain(String.raw`has no method \"fs.teleport\"`)
   })
 
+  it('refuses a second spawn onto a process identifier already in use', async () => {
+    const dir = workdir()
+    const server = await agent(dir)
+    const hello = encodeFrame({ t: 'hello', protocol: CONNECTOR_PROTOCOL_VERSION, token: TOKEN })
+    const spec = { argv: [process.execPath, '-e', 'setInterval(() => {}, 1000)'], cwd: dir, stdin: 'ignore', graceMs: 50 }
+    const spawn = (id: number): string => encodeFrame({ t: 'call', id, method: 'proc.spawn', params: [spec, 1] })
+
+    await expect(raw(server.port, [hello, spawn(1), spawn(2)])).resolves.toContain('is already live on this connection')
+  })
+
+  it('reports a spawn the target refused outright', async () => {
+    const dir = workdir()
+    const server = await agent(dir)
+    const hello = encodeFrame({ t: 'hello', protocol: CONNECTOR_PROTOCOL_VERSION, token: TOKEN })
+    const spec = { argv: [], cwd: dir, stdin: 'ignore', graceMs: 50 }
+    const call = encodeFrame({ t: 'call', id: 1, method: 'proc.spawn', params: [spec, 1] })
+
+    await expect(raw(server.port, [hello, call])).resolves.toContain('invalid argv')
+  })
+
+  it('keeps serving after a client resets its connection', async () => {
+    const dir = workdir()
+    const server = await agent(dir)
+    const rude = connect({ host: '127.0.0.1', port: server.port })
+    await new Promise<void>((resolve) => { rude.once('connect', () => { resolve() }) })
+    rude.write(encodeFrame({ t: 'hello', protocol: CONNECTOR_PROTOCOL_VERSION, token: TOKEN }))
+    rude.resetAndDestroy()
+
+    const link = await openConnectorTcpLink(options(server.port, dir))
+    trash.push(async () => link.close())
+    await expect(link.files.stat(dir, undefined)).resolves.toMatchObject({ type: 'directory' })
+  })
+
   it.each([
     [encodeFrame({ t: 'call', id: 1, method: 'fs.readText', params: [1, 'x'] }), 'argument 0 must be a string'],
     [encodeFrame({ t: 'call', id: 1, method: 'fs.resolve', params: ['x', 3] }), 'argument 1 must be a string or null'],
@@ -364,6 +421,10 @@ describe('protocol violations', () => {
 })
 
 describe('serving', () => {
+  it('projects a thrown non-error onto the wire as plain text', () => {
+    expect(wireError('the target threw a string')).toEqual({ kind: 'plain', message: 'the target threw a string' })
+  })
+
   it('requires a non-empty token', async () => {
     await expect(serveConnector({ host: '127.0.0.1', port: 0, token: '', workdir: workdir() }))
       .rejects.toThrow('connector-host: a non-empty token is required')

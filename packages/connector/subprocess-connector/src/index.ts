@@ -68,7 +68,6 @@ function createSink(mode: SubprocessOutputMode, inherited: NodeJS.WriteStream): 
 /** One connector-backed process projected onto the subprocess seam. */
 class ConnectorSubprocessHandle implements SubprocessHandle {
   private remotePid = -1
-  private exited = false
   private gone = false
   private readonly goneWaiters = new Set<() => void>()
   private settleDone!: (outcome: SubprocessOutcome) => void
@@ -99,14 +98,12 @@ class ConnectorSubprocessHandle implements SubprocessHandle {
     }, {
       data: (stream, base64) => { this.deliver(stream, Buffer.from(base64, 'base64')) },
       exit: (outcome) => {
-        this.exited = true
         this.endStreams()
         this.settleDone(outcome)
       },
       failed: (message) => {
-        const error = new ConnectorError(message, 'CONNECTOR_UNAVAILABLE')
         this.endStreams()
-        if (!this.exited) this.failDone(error)
+        this.failDone(new ConnectorError(message, 'CONNECTOR_UNAVAILABLE'))
         this.releaseGone()
       },
       gone: () => { this.releaseGone() },
@@ -204,9 +201,11 @@ export class ConnectorSubprocessRuntime extends SubprocessRuntime {
   constructor(ctx: Context) {
     super(ctx)
     ctx.effect(() => async () => {
+      // Ownership ends at tree exit, not at the outcome: `waitForExit` also
+      // settles for a spawn that never started, so no separate wait on `done`
+      // is needed to release a handle whose publication failed.
       const pending = [...this.live].map(async (handle) => {
         handle.terminate()
-        await handle.done.catch(() => undefined)
         await handle.waitForExit()
       })
       this.live.clear()
@@ -229,8 +228,7 @@ export class ConnectorSubprocessRuntime extends SubprocessRuntime {
     // handle owns the round-trip and reports a failed open through `done`.
     const handle = new ConnectorSubprocessHandle(this.ctx.connectors.link(currentRequest(this.ctx)), spec)
     this.live.add(handle)
-    const release = (): void => { this.live.delete(handle) }
-    handle.done.then(async () => handle.waitForExit(), () => undefined).then(release, release)
+    void handle.waitForExit().then(() => { this.live.delete(handle) })
     return handle
   }
 

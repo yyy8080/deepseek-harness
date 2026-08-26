@@ -194,6 +194,11 @@ class HostProcessOperations implements ConnectorProcessOperations {
       stdio: { stdin: localStdin(spec.stdin), stdout: 'pipe', stderr: 'pipe' },
       ...(spec.env === undefined ? {} : { env: { ...spec.env } }),
     })
+    // A child that exits while stdin still holds queued bytes makes that pipe
+    // emit EPIPE. The pending write's own callback reports it to the caller
+    // that asked for the write; without this listener the same error would
+    // also reach the agent process as an unhandled stream error.
+    handle.stdin?.on('error', () => undefined)
     handle.stdout?.on('data', (chunk: Buffer) => { events.data('stdout', chunk.toString('base64')) })
     handle.stderr?.on('data', (chunk: Buffer) => { events.data('stderr', chunk.toString('base64')) })
     // Exit is announced only once both piped streams are finished, so a client

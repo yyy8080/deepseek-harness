@@ -199,8 +199,10 @@ export interface ConnectorProcessEvents {
    */
   exit(outcome: SubprocessOutcome): void
   /**
-   * Report a failure that prevents any further observation of the process
-   * (spawn failure before publication, or transport loss afterwards).
+   * Report a failure that ends observation before any outcome: the spawn never
+   * started, or the transport was lost while the process was still running.
+   * Mutually exclusive with `exit` — a transport lost AFTER the outcome
+   * arrived reports `gone` instead, because the outcome is already known.
    * @param message - human-readable failure text.
    */
   failed(message: string): void
@@ -220,7 +222,11 @@ export interface ConnectorProcessHandle {
   write(base64: string): Promise<void>
   /** Close the child's stdin. Idempotent, and a no-op without a live pipe. */
   closeStdin(): Promise<void>
-  /** Begin the tree-scoped SIGTERM/grace/SIGKILL escalation. Idempotent. */
+  /**
+   * Begin the tree-scoped SIGTERM/grace/SIGKILL escalation. Idempotent, and
+   * never rejects: a process the target already reaped, and a link that has
+   * since dropped, both leave nothing for a caller to do about it.
+   */
   terminate(): Promise<void>
 }
 

@@ -150,7 +150,7 @@ class ConnectorSession {
   release(): void {
     for (const controller of this.inflight.values()) controller.abort()
     this.inflight.clear()
-    for (const live of this.processes.values()) void live.handle?.terminate().catch(() => {})
+    for (const live of this.processes.values()) void live.handle?.terminate()
     this.processes.clear()
   }
 
