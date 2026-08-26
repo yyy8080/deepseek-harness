@@ -505,6 +505,23 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry.',
   },
   {
+    key: 'instances',
+    pkg: 'instance',
+    title: 'Isolated runtime registry',
+    mode: 'seam',
+    implementations: ['instance-local-process'],
+    consumers: ['instance-gateway'],
+    note: 'The registry owns instance identity and the desired/observed state machine; instance-local-process isolates a runtime as a child harness with its own DSH_HOME, and the gateway places conversations on them.',
+  },
+  {
+    key: 'instanceGateway',
+    pkg: 'instance-gateway',
+    title: 'Multiplexing API gateway over instances',
+    mode: 'core',
+    consumers: [],
+    note: 'Provides ctx.apiProxy in place of the single-runtime gateway: session-bearing domains route to the instance that owns the session, the host plane answers locally, and the event streams merge.',
+  },
+  {
     key: 'web',
     pkg: 'web',
     title: 'Web access provider registry',

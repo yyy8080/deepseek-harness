@@ -1,0 +1,101 @@
+# The dsh-worker bundle patch: an isolated runtime over the dsh-base layer.
+#
+# This is the browser surface's HOST half with the browser removed — one
+# loopback `/api` gateway, no frontend dist, no `dsh.client` roster, no
+# default-browser handoff. A control plane supervises the process and reaches
+# it over that gateway; nothing here serves a person directly.
+#
+# A patch replaces the targeted row's whole `config`, so each row below
+# restates every key it owns.
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+# The shared module-reload chain stays off for the same reason the web surface
+# keeps it off: its reload lifecycle is untested.
+- id: hmr
+  disabled: true
+
+# One ephemeral in-memory index, deferred until a search actually asks for it,
+# so a worker's boot never pays for node:sqlite.
+- id: session-query-sqlite
+  config:
+    path: ':memory:'
+    openAt: never
+
+- insert:
+    # ── durable state, all under this worker's own DSH_HOME ─────────────────
+
+    - id: storage
+      name: '@deepseek-ai/dsh-storage'
+
+    - id: storage-json
+      name: '@deepseek-ai/dsh-storage-json'
+      config:
+        root: !!js dshHomePath('storages')
+
+    - id: storage-domain
+      name: '@deepseek-ai/dsh-storage-domain'
+      config:
+        backend: json
+
+    - id: workspace
+      name: '@deepseek-ai/dsh-workspace'
+
+    - id: session-projection-cache
+      name: '@deepseek-ai/dsh-session-projection-cache'
+      config:
+        writeEveryEvents: 200
+        writeIntervalMs: 5000
+
+    - id: session-reference
+      name: '@deepseek-ai/dsh-session-reference'
+
+    - id: file-reference-local
+      name: '@deepseek-ai/dsh-file-reference-local'
+
+    - id: session-stats
+      name: '@deepseek-ai/dsh-session-stats'
+
+    # ── the gateway and its transport ───────────────────────────────────────
+
+    # A worker has no display and no person at its console, so the picker is
+    # pinned to the browse backend rather than resolved by platform.
+    - id: directory-picker
+      name: '@deepseek-ai/dsh-host-directory-picker-browse'
+
+    - id: plugin-inventory
+      name: '@deepseek-ai/dsh-host-plugin-inventory'
+
+    # `nativeOpen: false` states what the platform check would only guess: a
+    # worker's host desktop, if it has one, belongs to nobody watching.
+    - id: api-gateway
+      name: '@deepseek-ai/dsh-host-apiproxy'
+      config:
+        nativeOpen: false
+
+    # Port 0: the supervisor learns the bound origin from the endpoint
+    # handshake below, so no port needs allocating in advance.
+    - id: webserver
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 0
+
+    # No trusted hosts: a worker answers its own loopback interface only, and
+    # every non-loopback Host header is refused by the /api trust fence.
+    - id: connection
+      name: '@deepseek-ai/dsh-client-connection'
+      config:
+        trustedHosts: []
+
+    # Readiness publication and the model-visible isolation notice. The
+    # handshake path arrives from the supervising instance provider; a
+    # hand-booted worker leaves it unset and prints its origin instead.
+    - id: worker-runtime
+      name: '@deepseek-ai/dsh-worker'
+      config:
+        endpointFile: !!js process.env.DSH_INSTANCE_ENDPOINT_FILE
+        surfaceContext: true
