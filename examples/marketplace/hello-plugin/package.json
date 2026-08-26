@@ -4,14 +4,14 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "lib/index.js",
+  "main": "index.js",
   "exports": {
-    ".": "./lib/index.js",
+    ".": "./index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
+    "index.js",
     "cordis.patch.yml"
   ],
   "license": "MIT",
