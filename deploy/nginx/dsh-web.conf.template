@@ -1,0 +1,64 @@
+# nginx reverse proxy template for the dsh web UI.
+#
+# Substitute every __PLACEHOLDER__ and install into the server's site
+# directory:
+#
+#   __PUBLIC_HOST__   server_name the browser addresses (hostname or bare IP)
+#   __LISTEN_PORT__   public port, e.g. 80
+#   __UPSTREAM__      dsh listen address, e.g. 127.0.0.1:3082
+#   __HTPASSWD__      htpasswd file readable by the nginx worker user
+#
+# Keep dsh bound to loopback and let this block be the only public entrance.
+#
+# Filename ordering matters on a host that already serves other sites: nginx
+# treats the first server block for a listen address as that address's default
+# server, so a filename sorting after the existing sites leaves their
+# default-server role untouched.
+
+# A dedicated variable keeps this file independent of any $connection_upgrade
+# an existing site already defines at http scope.
+map $http_upgrade $dsh_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen __LISTEN_PORT__;
+    listen [::]:__LISTEN_PORT__;
+    server_name __PUBLIC_HOST__;
+
+    access_log /var/log/nginx/dsh.access.log;
+    error_log  /var/log/nginx/dsh.error.log warn;
+
+    client_max_body_size 50m;
+
+    # A conversation can run shell and filesystem tools, so a publicly
+    # reachable deployment needs its own gate. The /api browser-trust fence
+    # stops cross-site and rebound-DNS callers, never a direct one.
+    auth_basic "DeepSeek Harness";
+    auth_basic_user_file __HTPASSWD__;
+
+    location / {
+        proxy_pass http://__UPSTREAM__;
+        proxy_http_version 1.1;
+
+        # The trust fence reads Host, so the original authority must survive
+        # the hop and the service must declare it via --trusted-host.
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # The browser reaches every runtime over one WebSocket downlink.
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $dsh_connection_upgrade;
+
+        # Agent turns stream for minutes; buffering would stall them.
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_cache off;
+        proxy_connect_timeout 30s;
+        proxy_read_timeout 1800s;
+        proxy_send_timeout 1800s;
+    }
+}

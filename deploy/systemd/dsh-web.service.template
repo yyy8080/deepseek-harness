@@ -1,0 +1,59 @@
+# systemd unit template for the dsh web UI running the instance-runtimes
+# overlay (one isolated harness runtime per conversation).
+#
+# Substitute every __PLACEHOLDER__ and install as
+# /etc/systemd/system/dsh-web.service:
+#
+#   __DSH_ROOT__          checkout root, e.g. /srv/dsh/app
+#   __DSH_HOME__          durable harness state, e.g. /srv/dsh/home
+#   __DSH_ENV_FILE__      server-local credential file, e.g. /srv/dsh/etc/dsh.env
+#   __NODE_BIN_DIR__      Node >=22.19 bin directory, e.g. /opt/node22/bin
+#   __RUN_USER__          unprivileged owner of the checkout
+#   __PUBLIC_AUTHORITY__  public host or host:port the browser addresses
+#
+# __PUBLIC_AUTHORITY__ is required whenever a reverse proxy fronts the server:
+# the /api browser-trust fence refuses any non-loopback Host that no
+# --trusted-host declares. A port-less value matches that host on any port.
+
+[Unit]
+Description=DeepSeek Harness web UI (instance-runtimes multi-runtime demo)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+Group=__RUN_USER__
+
+# The instance-runtimes overlay resolves each worker's command from
+# process.cwd(), so the service must run from the checkout root.
+WorkingDirectory=__DSH_ROOT__
+
+# Pin the modern Node explicitly: a host that keeps an older distro Node for
+# other services must never satisfy this unit from /usr/bin.
+Environment=PATH=__NODE_BIN_DIR__:/usr/local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+Environment=DSH_HOME=__DSH_HOME__
+
+# Model credentials stay on the deployment host and out of version control.
+EnvironmentFile=__DSH_ENV_FILE__
+
+ExecStart=__NODE_BIN_DIR__/node __DSH_ROOT__/apps/cli/lib/bin.js web \
+    --patch examples/instance-runtimes/cordis.yml \
+    --no-open \
+    --trusted-host __PUBLIC_AUTHORITY__
+
+Restart=on-failure
+RestartSec=5s
+
+# Each conversation runs in a child harness process. The default control-group
+# kill reaps the whole runtime tree; the grace window lets every worker flush
+# its session log first.
+TimeoutStopSec=45s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dsh-web
+
+[Install]
+WantedBy=multi-user.target
