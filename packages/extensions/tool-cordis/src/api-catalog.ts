@@ -620,6 +620,60 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'connectors',
+    summary: 'The connector registry (`ctx.connectors`).',
+    description: 'The connector registry (`ctx.connectors`). Transport plugins register the connectors a deployment configured; capability providers resolve the calling session\'s connector and operate through its shared link.',
+    methods: [
+      {
+        signature: 'readonly defaultId: ConnectorId | undefined',
+        description: 'Connector id used by sessions that never bound one, when configured.',
+        parameters: [],
+      },
+      {
+        signature: 'register(descriptor: ConnectorDescriptor, open: ConnectorOpener): () => Promise<void>',
+        description: 'Register one connector and the opener its shared link uses. Registering a duplicate id throws: a deployment naming two machines the same way cannot be resolved, and silently keeping one would bind sessions to the wrong target.',
+        parameters: [{ name: 'descriptor', description: 'the connector\'s identity, OS family, and workdir.' }, { name: 'open', description: 'opens the shared link; called at most once until it closes.' }],
+        returns: 'the disposer, which closes an opened link and settles once closed.',
+      },
+      {
+        signature: 'list(): ConnectorDescriptor[]',
+        description: 'Every registered connector, in registration order.',
+        parameters: [],
+        returns: 'the registered descriptors.',
+      },
+      {
+        signature: 'get(id: ConnectorId): ConnectorDescriptor | undefined',
+        description: 'Look up one connector without resolving a session binding.',
+        parameters: [{ name: 'id', description: 'the connector id to look up.' }],
+        returns: 'the descriptor, or undefined when no registration answers that id.',
+      },
+      {
+        signature: 'resolveId(request: ConnectorRequest = {}): ConnectorId',
+        description: 'Resolve which connector one capability call runs on. The session\'s last `connector/bound` event outranks the deployment default.',
+        parameters: [{ name: 'request', description: 'the calling session, when there is one.' }],
+        returns: 'the resolved connector id.',
+      },
+      {
+        signature: 'describe(request: ConnectorRequest = {}): ConnectorDescriptor',
+        description: 'Resolve the connector for one capability call and require its registration.',
+        parameters: [{ name: 'request', description: 'the calling session, when there is one.' }],
+        returns: 'the resolved descriptor.',
+      },
+      {
+        signature: 'tryDescribe(request: ConnectorRequest = {}): ConnectorDescriptor | undefined',
+        description: 'Resolve the connector for one call without raising when nothing answers.',
+        parameters: [{ name: 'request', description: 'the calling session, when there is one.' }],
+        returns: 'the resolved descriptor, or undefined when none can be resolved.',
+      },
+      {
+        signature: 'async link(request: ConnectorRequest = {}): Promise<ConnectorLink>',
+        description: 'Obtain the shared live link for one capability call, opening it on first use. Concurrent callers await the same opening; a failed opening is not memoized, so the next call retries.',
+        parameters: [{ name: 'request', description: 'the calling session, when there is one.' }],
+        returns: 'the connector\'s live link.',
+      },
+    ],
+  },
+  {
     key: 'credentials',
     summary: 'Abstract credential service over two key spaces that answer two questions.',
     description: 'Abstract credential service over two key spaces that answer two questions.\n\nA CredentialRef answers "what is behind this environment-variable name", layered over the process environment, the provider-managed store, and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.\n\nA CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).',
@@ -2502,6 +2556,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'connector/link-closed',
+    mode: 'emit',
+    signature: '\'connector/link-closed\'(descriptor: ConnectorDescriptor): void',
+    summary: 'A connector\'s shared link was released, either because its registration was disposed or because the registry itself is unloading.',
+    description: 'A connector\'s shared link was released, either because its registration was disposed or because the registry itself is unloading.',
+    parameters: [{ name: 'descriptor', description: 'the connector whose link is no longer live.' }],
+  },
+  {
+    name: 'connector/link-opened',
+    mode: 'emit',
+    signature: '\'connector/link-opened\'(descriptor: ConnectorDescriptor): void',
+    summary: 'A connector\'s shared link finished opening and is now serving operations.',
+    description: 'A connector\'s shared link finished opening and is now serving operations. Emitted once per connector until the link is closed.',
+    parameters: [{ name: 'descriptor', description: 'the connector whose link became live.' }],
+  },
+  {
     name: 'cordis/dynamic-package',
     mode: 'emit',
     signature: '\'cordis/dynamic-package\'(pkg: DynamicCordisPackage): void',
@@ -3112,6 +3182,62 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConfinedSandboxMode',
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
+  },
+  {
+    name: 'ConnectorDescriptor',
+    declaration: 'export interface ConnectorDescriptor {\n    id: ConnectorId;\n    os: ConnectorOs;\n    workdir: string;\n}',
+  },
+  {
+    name: 'ConnectorEditRequest',
+    declaration: 'export interface ConnectorEditRequest {\n    targetKey: string;\n    displayPath: string;\n    edit: FsEditRequest;\n    expected?: {\n        version: FsVersion;\n    };\n}',
+  },
+  {
+    name: 'ConnectorFileOperations',
+    declaration: 'export interface ConnectorFileOperations {\n    resolve(path: string, cwd: string | undefined, signal: AbortSignal | undefined): Promise<ConnectorTarget>;\n    stat(targetKey: string, signal: AbortSignal | undefined): Promise<FsInfo | undefined>;\n    lstat(path: string, cwd: string | undefined, signal: AbortSignal | undefined): Promise<FsPathInfo | undefined>;\n    readText(targetKey: string, displayPath: string, signal: AbortSignal | undefined): Promise<string>;\n    readBytesBase64(targetKey: string, displayPath: string, maxBytes: number, signal: AbortSignal | undefined): Promise<string>;\n    listDir(targetKey: string, displayPath: string, signal: AbortSignal | undefined): Promise<FsDirEntry[]>;\n    writeText(request: ConnectorWriteRequest, signal: AbortSignal | undefined): Promise<FsWriteOutcome>;\n    editText(request: ConnectorEditRequest, signal: AbortSignal | undefined): Promise<FsEditOutcome>;\n}',
+  },
+  {
+    name: 'ConnectorId',
+    declaration: 'export type ConnectorId = Branded<\'ConnectorId\'>;',
+  },
+  {
+    name: 'ConnectorLink',
+    declaration: 'export interface ConnectorLink {\n    readonly descriptor: ConnectorDescriptor;\n    readonly files: ConnectorFileOperations;\n    readonly processes: ConnectorProcessOperations;\n    close(): Promise<void>;\n}',
+  },
+  {
+    name: 'ConnectorOpener',
+    declaration: 'export type ConnectorOpener = () => Promise<ConnectorLink>;',
+  },
+  {
+    name: 'ConnectorOs',
+    declaration: 'export type ConnectorOs = \'linux\' | \'macos\' | \'windows\';',
+  },
+  {
+    name: 'ConnectorProcessEvents',
+    declaration: 'export interface ConnectorProcessEvents {\n    data(stream: \'stdout\' | \'stderr\', base64: string): void;\n    exit(outcome: SubprocessOutcome): void;\n    failed(message: string): void;\n    gone(): void;\n}',
+  },
+  {
+    name: 'ConnectorProcessHandle',
+    declaration: 'export interface ConnectorProcessHandle {\n    readonly pid: number;\n    write(base64: string): Promise<void>;\n    closeStdin(): Promise<void>;\n    terminate(): Promise<void>;\n}',
+  },
+  {
+    name: 'ConnectorProcessOperations',
+    declaration: 'export interface ConnectorProcessOperations {\n    resolveExecutable(command: string, env: Readonly<Record<string, string>> | undefined, signal: AbortSignal | undefined): Promise<string>;\n    spawn(spec: ConnectorSpawnSpec, events: ConnectorProcessEvents): Promise<ConnectorProcessHandle>;\n}',
+  },
+  {
+    name: 'ConnectorRequest',
+    declaration: 'export interface ConnectorRequest {\n    session?: Session;\n}',
+  },
+  {
+    name: 'ConnectorSpawnSpec',
+    declaration: 'export interface ConnectorSpawnSpec {\n    argv: readonly string[];\n    cwd: string;\n    stdin: \'ignore\' | \'pipe\' | {\n        readonly base64: string;\n    };\n    graceMs: number;\n    env?: Readonly<Record<string, string>>;\n}',
+  },
+  {
+    name: 'ConnectorTarget',
+    declaration: 'export interface ConnectorTarget {\n    targetKey: string;\n    displayPath: string;\n}',
+  },
+  {
+    name: 'ConnectorWriteRequest',
+    declaration: 'export interface ConnectorWriteRequest {\n    targetKey: string;\n    displayPath: string;\n    content: string;\n    expected?: FsWriteIntent;\n}',
   },
   {
     name: 'ContentBlockMap',

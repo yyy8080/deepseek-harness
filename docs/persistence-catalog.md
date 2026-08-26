@@ -393,6 +393,27 @@ Types: [ContentBlock](subsystems/core.md) · [TokenUsage](subsystems/llm-streami
 
 Source: [`packages/compaction/compaction/src/types.ts:33`](../packages/compaction/compaction/src/types.ts)
 
+### `connector/*`
+
+<a id="connectorbound--log-only"></a>
+
+#### `connector/bound` — log-only
+
+```ts persistence-catalog
+/**
+ * The session's execution world was bound to a connector — log-only (like
+ * `sandbox/mode`; NOT a surface event, carries no `surfaceOp`): durable and
+ * replayable, never in the model transcript. The LAST such event is the
+ * session's binding ({@link effectiveConnectorId}).
+ */
+'connector/bound': {
+  /** The connector every file and process operation in this session reaches. */
+  connectorId: ConnectorId
+}
+```
+
+Source: [`packages/connector/connector/src/session-connector.ts:25`](../packages/connector/connector/src/session-connector.ts)
+
 ### `feedback/*`
 
 <a id="feedbackrecord--log-only"></a>

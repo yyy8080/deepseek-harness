@@ -541,6 +541,83 @@ export interface ToolResultPruneConfig {
 
 来源：[`packages/compaction/compaction-tool-result-pruner/src/types.ts:4`](../packages/compaction/compaction-tool-result-pruner/src/types.ts)
 
+<a id="deepseek-aidsh-connector"></a>
+
+## `@deepseek-ai/dsh-connector`
+
+```ts config-catalog
+/** Deployment configuration of the connector registry. */
+export interface Config {
+  /**
+   * Connector a session runs on when its log carries no `connector/bound`
+   * event. Resolution fails loud when the named connector is not registered,
+   * and when it is omitted a session must bind one explicitly.
+   */
+  default?: string
+}
+```
+
+来源：[`packages/connector/connector/src/index.ts:68`](../packages/connector/connector/src/index.ts)
+
+<a id="deepseek-aidsh-connector-host"></a>
+
+## `@deepseek-ai/dsh-connector-host`
+
+需要：`connectors`
+
+```ts config-catalog
+/** Configuration of the in-process connector. */
+export interface Config {
+  /** Identifier sessions bind to. Defaults to `local`. */
+  id?: string
+  /** Absolute default working directory. Defaults to the harness process cwd. */
+  workdir?: string
+}
+```
+
+来源：[`packages/connector/connector-host/src/index.ts:35`](../packages/connector/connector-host/src/index.ts)
+
+<a id="deepseek-aidsh-connector-tcp"></a>
+
+## `@deepseek-ai/dsh-connector-tcp`
+
+需要：`connectors`
+
+```ts config-catalog
+/** Configuration of the TCP connector transport. */
+export interface Config {
+  /** The remote connectors this deployment offers. */
+  connectors?: ConnectorTcpDeclaration[]
+}
+
+/** One declared remote connector. */
+export interface ConnectorTcpDeclaration {
+  /** Identifier sessions bind to. */
+  id: string
+  /** Agent host name or address. Prefer a loopback address behind an SSH tunnel. */
+  host: string
+  /** Agent TCP port. */
+  port: number
+  /** Target OS family; the agent must report the same one. */
+  os: ConnectorOs
+  /** Target default working directory; the agent must report the same one. */
+  workdir: string
+  /**
+   * Environment variable holding the shared secret. Preferred over `token`
+   * so a deployment file never carries the credential.
+   */
+  tokenEnv?: string
+  /** Inline shared secret, for a deployment that manages this file as a secret. */
+  token?: string
+  /** Deadline for socket connect plus handshake. Defaults to 10 seconds. */
+  connectTimeoutMs?: number
+}
+```
+
+依赖：[`ConnectorOs`](subsystems/connector.zh.md)
+
+来源：[`packages/connector/connector-tcp/src/index.ts:52`](../packages/connector/connector-tcp/src/index.ts)
+
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
 ## `@deepseek-ai/dsh-cordis-host-runner`
@@ -3269,6 +3346,7 @@ export interface Config {
 - `@deepseek-ai/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
+- `@deepseek-ai/dsh-fs-connector` — 需要 `connectors`（[`packages/connector/fs-connector/src/index.ts`](../packages/connector/fs-connector/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
@@ -3286,6 +3364,7 @@ export interface Config {
 - `@deepseek-ai/dsh-skill-badge` — 需要 `skills`（[`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts)）
 - `@deepseek-ai/dsh-storage`（[`packages/storage/storage/src/index.ts`](../packages/storage/storage/src/index.ts)）
 - `@deepseek-ai/dsh-subagent`（[`packages/subagent/subagent/src/index.ts`](../packages/subagent/subagent/src/index.ts)）
+- `@deepseek-ai/dsh-subprocess-connector` — 需要 `connectors`（[`packages/connector/subprocess-connector/src/index.ts`](../packages/connector/subprocess-connector/src/index.ts)）
 - `@deepseek-ai/dsh-subprocess-local`（[`packages/subprocess/subprocess-local/src/index.ts`](../packages/subprocess/subprocess-local/src/index.ts)）
 - `@deepseek-ai/dsh-terminal`（[`packages/terminal/terminal/src/index.ts`](../packages/terminal/terminal/src/index.ts)）
 - `@deepseek-ai/dsh-tool-ask-user` — 需要 `tools` · `userInteraction`（[`packages/interaction/tool-ask-user/src/index.ts`](../packages/interaction/tool-ask-user/src/index.ts)）

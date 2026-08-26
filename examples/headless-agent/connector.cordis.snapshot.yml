@@ -1,0 +1,35 @@
+# Keyless connector composition over the real headless app: the execution world
+# is the in-process connector host, so the bash tool's command and the file it
+# reads both run through the connector operation set rather than directly on
+# ctx.fs and ctx.subprocess. A remote connector answers the same operation set,
+# so the assembled transcript is what a TCP target produces as well.
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ./cordis.yml
+    patches:
+      - id: llm-deepseek
+        name: '@deepseek-ai/dsh-llm-deepseek'
+        disabled: true
+      - id: subprocess
+        name: '@deepseek-ai/dsh-subprocess-local'
+        disabled: true
+      - id: fs-local
+        name: '@deepseek-ai/dsh-fs-local'
+        disabled: true
+      - insert:
+          - id: connectors
+            name: '@deepseek-ai/dsh-connector'
+            config:
+              default: local
+          - id: connector-host
+            name: '@deepseek-ai/dsh-connector-host'
+            config:
+              id: local
+              workdir: !!js process.cwd()
+          - id: subprocess-connector
+            name: '@deepseek-ai/dsh-subprocess-connector'
+          - id: fs-connector
+            name: '@deepseek-ai/dsh-fs-connector'
+          - id: connector-fixture-llm
+            name: './tests/fixtures/connector-llm.mjs'
