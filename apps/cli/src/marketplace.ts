@@ -106,7 +106,7 @@ function printListing(listing: PluginListing): void {
 /** Print one catalog row in the full detail form. */
 function printDetail(listing: PluginListing): void {
   const { manifest } = listing
-  say(`${manifest.id}`)
+  say(manifest.id)
   say(`  name:        ${manifest.displayName}`)
   say(`  publisher:   ${manifest.publisher}`)
   if (manifest.homepage !== undefined) say(`  homepage:    ${manifest.homepage}`)

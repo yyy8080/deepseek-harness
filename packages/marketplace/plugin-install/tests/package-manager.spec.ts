@@ -38,7 +38,7 @@ describe('runPackageManager', () => {
     vi.stubEnv('PATH', join(root, 'empty-bin'))
 
     expect(() => runPackageManager({ cwd: root, args: ['--version'], stdio: 'pipe' }))
-      .toThrowError(expect.objectContaining({ code: 'PLUGIN_INSTALL_PACKAGE_MANAGER_MISSING' }))
+      .toThrow(expect.objectContaining({ code: 'PLUGIN_INSTALL_PACKAGE_MANAGER_MISSING' }))
   })
 
   // A non-executable file named pnpm makes spawn fail with EACCES rather than
@@ -52,7 +52,7 @@ describe('runPackageManager', () => {
     vi.stubEnv('PATH', bin)
 
     expect(() => runPackageManager({ cwd: root, args: ['--version'], stdio: 'pipe' }))
-      .toThrowError(expect.objectContaining({ code: 'EACCES' }))
+      .toThrow(expect.objectContaining({ code: 'EACCES' }))
   })
 
   it('captures the exit code and diagnostics of a real failing run', () => {

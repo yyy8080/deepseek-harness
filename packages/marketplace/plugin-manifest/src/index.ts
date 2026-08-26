@@ -74,7 +74,7 @@ export const PluginSectionSchema: z<PluginSection> = z.object({
   publisher: z.string().required(),
   capabilities: PluginCapabilitiesSchema.required(),
   homepage: z.string(),
-}) as z<PluginSection>
+})
 
 /**
  * Validate one `dsh.plugin` section against {@link PluginSectionSchema}.

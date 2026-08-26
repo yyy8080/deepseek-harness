@@ -83,7 +83,7 @@ describe('catalog aggregation', () => {
     const second = fixedProvider('second', [listing('b', ['2.0.0'])])
     registry.registerProvider(first)
     registry.registerProvider(second)
-    const signal = AbortSignal.abort.call(AbortSignal, 'unused') as AbortSignal
+    const signal = AbortSignal.abort('unused')
     const merged = await registry.catalog(signal)
     expect([...merged.keys()]).toEqual(['a', 'b'])
     expect(first.signals).toEqual([signal])

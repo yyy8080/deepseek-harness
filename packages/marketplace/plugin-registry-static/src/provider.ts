@@ -46,11 +46,17 @@ const IndexEntryReleasesSchema: z<{ releases: IndexRelease[] }> = z.object({
   releases: z.array(IndexReleaseSchema).required(),
 })
 
+/** The index document's own frame, before its entries are validated. */
+interface IndexFrame {
+  version: number
+  plugins: unknown[]
+}
+
 /** Schema for the index document's own frame. */
-const IndexFrameSchema: z<{ version: number; plugins: unknown[] }> = z.object({
+const IndexFrameSchema: z<IndexFrame> = z.object({
   version: z.number().required(),
   plugins: z.array(z.any()).required(),
-}) as z<{ version: number; plugins: unknown[] }>
+})
 
 /** Where a static index lives and how a relative tarball path resolves against it. */
 interface IndexLocation {
@@ -134,9 +140,10 @@ function parseReleases(entry: unknown, id: string, location: IndexLocation): Plu
 
 /** Parse one complete index document into catalog listings. */
 function parseIndex(text: string, location: IndexLocation): PluginListing[] {
-  let frame: { version: number; plugins: unknown[] }
+  let frame: IndexFrame
   try {
-    frame = IndexFrameSchema(JSON.parse(text))
+    // The schema is the validation; the cast only satisfies its typed callable.
+    frame = IndexFrameSchema(JSON.parse(text) as IndexFrame)
   } catch (error) {
     throw new PluginRegistryError(
       `${location.label}: not a valid marketplace index document: ${reasonOf(error)}`,

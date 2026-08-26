@@ -76,8 +76,11 @@ export interface PackageManagerResult {
  */
 export function runPackageManager(run: PackageManagerRun): PackageManagerResult {
   // Windows resolves pnpm through its .cmd shim, which spawn() refuses
-  // without a shell since the CVE-2024-27980 hardening.
-  const result: SpawnSyncReturns<string> = spawnSync(PACKAGE_MANAGER, [...run.args], {
+  // without a shell since the CVE-2024-27980 hardening. The declared element
+  // type widens to `| null` because `stdio: 'inherit'` hands both streams to
+  // this process and leaves the captured pair empty, which @types/node's
+  // encoding overload does not express.
+  const result: SpawnSyncReturns<string | null> = spawnSync(PACKAGE_MANAGER, [...run.args], {
     cwd: run.cwd,
     stdio: run.stdio,
     shell: process.platform === 'win32',

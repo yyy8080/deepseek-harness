@@ -223,7 +223,7 @@ describe('uninstall', () => {
     const { home, installAnchor } = fixture()
 
     expect(() => uninstall({ profile: PROFILE, home, installAnchor }, pluginId('dsh-plugin-sample')))
-      .toThrowError(expect.objectContaining({ code: 'PLUGIN_INSTALL_NOT_INSTALLED' }))
+      .toThrow(expect.objectContaining({ code: 'PLUGIN_INSTALL_NOT_INSTALLED' }))
   })
 
   it('reports a package the profile does not depend on', slow, () => {
@@ -299,20 +299,31 @@ describe('list', () => {
       ...request, tarball: packPlugin(root, { name: 'dsh-plugin-plain', version: '2.1.0', bundle: false }),
     }))
 
-    expect(list(request)).toEqual([
+    const reported = list(request).map(plugin => ({
+      id: plugin.id,
+      version: plugin.version,
+      bundle: plugin.bundle,
+      manifest: plugin.manifest?.id,
+      origin: plugin.provenance?.origin,
+      release: plugin.provenance?.version,
+    }))
+
+    expect(reported).toEqual([
       {
         id: 'dsh-plugin-plain',
         version: '2.1.0',
         bundle: false,
-        manifest: expect.objectContaining({ id: 'dsh-plugin-plain' }),
-        provenance: expect.objectContaining({ origin: 'tarball' }),
+        manifest: 'dsh-plugin-plain',
+        origin: 'tarball',
+        release: undefined,
       },
       {
         id: 'dsh-plugin-sample',
         version: '1.0.0',
         bundle: true,
-        manifest: expect.objectContaining({ id: 'dsh-plugin-sample' }),
-        provenance: expect.objectContaining({ origin: 'marketplace', version: '1.0.0' }),
+        manifest: 'dsh-plugin-sample',
+        origin: 'marketplace',
+        release: '1.0.0',
       },
     ])
   })
