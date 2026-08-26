@@ -53,7 +53,7 @@ profile 启动器在启动时读取一次 `dsh.profile.bundles`，并且只让 `
 
 ## Testing
 
-包测试覆盖全部四个包，在 `src` 上达到完整的语句、分支与函数覆盖率，并针对临时 profile 目录使用真实 pnpm 而非桩化的包管理器。`apps/cli/tests/marketplace-install.e2e.ts` 通过构建后的 CLI 固定整条流程：打包样例、search、show、安装进一个用完即弃的 `DSH_HOME`、断言 profile manifest 的 `dsh.profile.bundles` 与 `dsh.marketplace.installs`、断言已安装的层出现在 `--dump-config` 中、卸载，并断言它已消失。拒绝路径在两端都有覆盖：无效的 `dsh.plugin` 段会让 `parsePluginSection` 明确失败，而无效或版本不匹配的索引文档会让静态提供方失败并指明索引路径。
+包测试覆盖全部四个包，在 `src` 上达到完整的语句、分支与函数覆盖率，并针对临时 profile 目录使用真实 pnpm 而非桩化的包管理器。`apps/cli/tests/marketplace-install.e2e.ts` 通过 CLI 固定整条流程：打包样例、search、show、安装进一个用完即弃的 `DSH_HOME`、断言 profile manifest 的 `dsh.profile.bundles` 与 `dsh.marketplace.installs`、断言已安装的层出现在 `--dump-config` 中、卸载，并断言它已消失。`apps/cli/tests/marketplace.snapshot.ts` 固定的是人真正读到的内容：针对构建后 CLI 运行每个动词得到的无密钥记录，包含能力行及其「未强制执行」提示、`list` 渲染出的来源信息，以及重新启动后 `--dump-config` 展示的已组合层。该记录中有三类取值被归一化掉，因为它们不归本仓库所有——临时 home 与目录路径、安装时间戳，以及包管理器自身的进度输出块（`install` 与 `uninstall` 会把它直接透传到 stdout）。拒绝路径在两端都有覆盖：无效的 `dsh.plugin` 段会让 `parsePluginSection` 明确失败，而无效或版本不匹配的索引文档会让静态提供方失败并指明索引路径。
 
 ## Consequences
 
@@ -64,4 +64,4 @@ profile 启动器在启动时读取一次 `dsh.profile.bundles`，并且只让 `
 
 ## Deferred
 
-设置中的 **Marketplace** 标签页（一个位于 `ctx.pluginRegistry` 与 `plugin-install` 之上的 Host Remote，以及一个与插件清单标签页并列的 `settings.plugins.tab` 占位）不在本次改动中，缺少的一个事实正是原因：Host 插件无法得知自己运行在哪个 profile 中。`dsh --profile <name>` 在启动器中解析 profile 目录，只把 `ctx.cmdlineArgs` 与环境快照提供给配置树，因此被组合进来的插件内部没有任何东西知道安装应当写入 `$DSH_HOME/profiles` 下的哪个目录。一个在 web-app 组合包静态 patch 中写死 profile 名称的网关，只会装进那份 patch 恰好携带的名字，而不是正在运行的 profile——这是一个悄无声息的错误目标，也正是这个 seam 绝不能有的失效模式。像[应用持有命令行](../architecture/2026-08-06-app-owned-command-line.zh.md)暴露调用期取值那样，由启动器以启动服务的形式暴露正在运行的 profile，是这件事的前提，而那是对 `packages/boot` 的改动，不是对 marketplace 的改动。只读标签页作为中间步骤被否决了：一个只能浏览、无法安装的 marketplace，教给人的是「按钮不见了」，而不是「该操作暂不可用」。在此之前命令行就是完整的 Consumer，`apps/cli/tests/marketplace-install.e2e.ts` 中的 `--dump-config` 记录就是该流程的整机证据。签名、哈希校验、发布流水线与在线插件编辑器同样不在范围内。
+设置中的 **Marketplace** 标签页（一个位于 `ctx.pluginRegistry` 与 `plugin-install` 之上的 Host Remote，以及一个与插件清单标签页并列的 `settings.plugins.tab` 占位）不在本次改动中，缺少的一个事实正是原因：Host 插件无法得知自己运行在哪个 profile 中。`dsh --profile <name>` 在启动器中解析 profile 目录，只把 `ctx.cmdlineArgs` 与环境快照提供给配置树，因此被组合进来的插件内部没有任何东西知道安装应当写入 `$DSH_HOME/profiles` 下的哪个目录。一个在 web-app 组合包静态 patch 中写死 profile 名称的网关，只会装进那份 patch 恰好携带的名字，而不是正在运行的 profile——这是一个悄无声息的错误目标，也正是这个 seam 绝不能有的失效模式。像[应用持有命令行](../architecture/2026-08-06-app-owned-command-line.zh.md)暴露调用期取值那样，由启动器以启动服务的形式暴露正在运行的 profile，是这件事的前提，而那是对 `packages/boot` 的改动，不是对 marketplace 的改动。只读标签页作为中间步骤被否决了：一个只能浏览、无法安装的 marketplace，教给人的是「按钮不见了」，而不是「该操作暂不可用」。在此之前命令行就是完整的 Consumer，`apps/cli/tests/marketplace.snapshot.ts` 就是该流程的整机证据。签名、哈希校验、发布流水线与在线插件编辑器同样不在范围内。
