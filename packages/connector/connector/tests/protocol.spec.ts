@@ -18,7 +18,7 @@ const hello: ConnectorFrame = { t: 'hello', protocol: CONNECTOR_PROTOCOL_VERSION
 
 describe('frame encoding', () => {
   it('terminates every encoded frame with a newline', () => {
-    expect(encodeFrame(hello)).toBe(`{"t":"hello","protocol":1,"token":"secret"}\n`)
+    expect(encodeFrame(hello)).toBe('{"t":"hello","protocol":1,"token":"secret"}\n')
   })
 
   it('round-trips a frame through the decoder', () => {

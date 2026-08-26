@@ -80,10 +80,10 @@ describe('registration', () => {
     const ctx = await mounted()
     const only = descriptor('build-linux')
     const dispose = ctx.connectors.register(only, async () => stubLink(only))
-    dispose()
+    await dispose()
     const replacement = descriptor('build-linux', 'macos')
     ctx.connectors.register(replacement, async () => stubLink(replacement))
-    dispose()
+    await dispose()
 
     expect(ctx.connectors.list()).toEqual([replacement])
   })
@@ -194,7 +194,7 @@ describe('links', () => {
     const ctx = await mounted({ default: 'build-linux' })
     const only = descriptor('build-linux')
     const open = vi.fn(async () => stubLink(only))
-    ctx.connectors.register(only, open)()
+    await ctx.connectors.register(only, open)()
 
     expect(open).not.toHaveBeenCalled()
   })

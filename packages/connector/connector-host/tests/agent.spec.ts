@@ -25,7 +25,7 @@ afterEach(() => {
 function captureStdout(): { lines: string[] } {
   const lines: string[] = []
   const original = process.stdout.write.bind(process.stdout)
-  process.stdout.write = ((chunk: string) => { lines.push(String(chunk)); return true }) as typeof process.stdout.write
+  process.stdout.write = (chunk: string) => { lines.push(chunk); return true }
   trash.push(() => { process.stdout.write = original })
   return { lines }
 }

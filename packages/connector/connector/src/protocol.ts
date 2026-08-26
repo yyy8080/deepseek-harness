@@ -217,9 +217,9 @@ export function decodeFrame(line: string, maxBytes: number = CONNECTOR_MAX_FRAME
 }
 
 /** Require every named field to be present on a frame whose tag already matched. */
-function requireFields<T extends ConnectorFrame>(frame: object, fields: readonly string[]): T {
+function requireFields(frame: object, fields: readonly string[]): ConnectorFrame {
   for (const field of fields) {
     if (!(field in frame)) throw protocolFailure(`frame is missing "${field}"`)
   }
-  return frame as T
+  return frame as ConnectorFrame
 }

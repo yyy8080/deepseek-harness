@@ -160,18 +160,18 @@ export class ConnectorRegistry extends Service {
    * target.
    * @param descriptor - the connector's identity, OS family, and workdir.
    * @param open - opens the shared link; called at most once until it closes.
-   * @returns the disposer, which closes an opened link.
+   * @returns the disposer, which closes an opened link and settles once closed.
    */
-  register(descriptor: ConnectorDescriptor, open: ConnectorOpener): () => void {
+  register(descriptor: ConnectorDescriptor, open: ConnectorOpener): () => Promise<void> {
     const key = String(descriptor.id)
     if (this.registrations.has(key)) {
       throw new Error(`connector ${JSON.stringify(key)} is already registered`)
     }
     const registration: Registration = { descriptor, open }
     this.registrations.set(key, registration)
-    return this.ctx.effect(() => () => {
+    return this.ctx.effect(() => async () => {
       this.registrations.delete(key)
-      return this.release(registration)
+      await this.release(registration)
     }, `connector ${key}`)
   }
 

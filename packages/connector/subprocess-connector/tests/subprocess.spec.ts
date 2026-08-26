@@ -120,10 +120,10 @@ describe('spawning', () => {
     const ctx = await mounted(dir)
     const written: string[] = []
     const restore = process.stdout.write.bind(process.stdout)
-    process.stdout.write = ((chunk: string | Uint8Array) => {
-      written.push(Buffer.from(chunk as Uint8Array).toString('utf8'))
+    process.stdout.write = (chunk: string | Uint8Array) => {
+      written.push(Buffer.from(chunk).toString('utf8'))
       return true
-    }) as typeof process.stdout.write
+    }
     trash.push(() => { process.stdout.write = restore })
 
     const handle = ctx.subprocess.spawn({

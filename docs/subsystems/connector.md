@@ -90,9 +90,9 @@ The connector registry (`ctx.connectors`). Transport plugins register the connec
  * target.
  * @param descriptor - the connector's identity, OS family, and workdir.
  * @param open - opens the shared link; called at most once until it closes.
- * @returns the disposer, which closes an opened link.
+ * @returns the disposer, which closes an opened link and settles once closed.
  */
-register(descriptor: ConnectorDescriptor, open: ConnectorOpener): () => void
+register(descriptor: ConnectorDescriptor, open: ConnectorOpener): () => Promise<void>
 
 /**
  * Every registered connector, in registration order.

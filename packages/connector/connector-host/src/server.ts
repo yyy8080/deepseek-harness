@@ -16,7 +16,13 @@ import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
 import { ConnectorError } from '@deepseek-ai/dsh-connector'
-import type { ConnectorLink, ConnectorProcessHandle, ConnectorSpawnSpec } from '@deepseek-ai/dsh-connector'
+import type {
+  ConnectorEditRequest,
+  ConnectorLink,
+  ConnectorProcessHandle,
+  ConnectorSpawnSpec,
+  ConnectorWriteRequest,
+} from '@deepseek-ai/dsh-connector'
 import {
   CONNECTOR_PROTOCOL_VERSION,
   ConnectorFrameDecoder,
@@ -93,12 +99,12 @@ function wireNumber(params: readonly unknown[], index: number, method: string): 
 }
 
 /** Read one positional wire argument that must be an object. */
-function wireObject<T>(params: readonly unknown[], index: number, method: string): T {
+function wireObject(params: readonly unknown[], index: number, method: string): object {
   const value = params[index]
   if (typeof value !== 'object' || value === null) {
     throw new ConnectorError(`${method} argument ${index} must be an object`, 'CONNECTOR_PROTOCOL')
   }
-  return value as T
+  return value
 }
 
 /** Read one positional wire argument that must be an object or absent. */
@@ -109,7 +115,7 @@ function wireOptionalRecord(
 ): Record<string, string> | undefined {
   const value = params[index]
   if (value === undefined || value === null) return undefined
-  return wireObject<Record<string, string>>(params, index, method)
+  return wireObject(params, index, method) as Record<string, string>
 }
 
 /**
@@ -231,9 +237,9 @@ class ConnectorSession {
       case 'fs.listDir':
         return files.listDir(wireString(params, 0, method), wireString(params, 1, method), signal)
       case 'fs.writeText':
-        return files.writeText(wireObject(params, 0, method), signal)
+        return files.writeText(wireObject(params, 0, method) as ConnectorWriteRequest, signal)
       case 'fs.editText':
-        return files.editText(wireObject(params, 0, method), signal)
+        return files.editText(wireObject(params, 0, method) as ConnectorEditRequest, signal)
       case 'proc.resolveExecutable':
         return this.link.processes.resolveExecutable(
           wireString(params, 0, method),
@@ -241,7 +247,7 @@ class ConnectorSession {
           signal,
         )
       case 'proc.spawn':
-        return this.spawn(wireObject<ConnectorSpawnSpec>(params, 0, method), wireNumber(params, 1, method))
+        return this.spawn(wireObject(params, 0, method) as ConnectorSpawnSpec, wireNumber(params, 1, method))
       case 'proc.write':
         await this.process(wireNumber(params, 0, method)).write(wireString(params, 1, method))
         return null

@@ -630,10 +630,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'register(descriptor: ConnectorDescriptor, open: ConnectorOpener): () => void',
+        signature: 'register(descriptor: ConnectorDescriptor, open: ConnectorOpener): () => Promise<void>',
         description: 'Register one connector and the opener its shared link uses. Registering a duplicate id throws: a deployment naming two machines the same way cannot be resolved, and silently keeping one would bind sessions to the wrong target.',
         parameters: [{ name: 'descriptor', description: 'the connector\'s identity, OS family, and workdir.' }, { name: 'open', description: 'opens the shared link; called at most once until it closes.' }],
-        returns: 'the disposer, which closes an opened link.',
+        returns: 'the disposer, which closes an opened link and settles once closed.',
       },
       {
         signature: 'list(): ConnectorDescriptor[]',
