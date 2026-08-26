@@ -38,6 +38,8 @@ const compactionScenarioDir = join(snapshotsDir, 'compaction-recovery')
 const compactionSessionFixture = join(compactionScenarioDir, 'session.jsonl')
 const compactionStreamExpected = join(compactionScenarioDir, 'stream-json.expected.jsonl')
 const compactionConfigPath = fileURLToPath(new URL('../compaction.cordis.snapshot.yml', import.meta.url))
+const connectorScenarioDir = join(snapshotsDir, 'connector-execution-world')
+const connectorConfigPath = fileURLToPath(new URL('../connector.cordis.snapshot.yml', import.meta.url))
 const credentialsScenarioDir = join(snapshotsDir, 'missing-credential')
 const credentialsConfigPath = fileURLToPath(new URL('../credentials.cordis.snapshot.yml', import.meta.url))
 // Same keyless composition as the missing-credential scenario: the endpoint is
@@ -421,6 +423,46 @@ describe('headless stream-json snapshots', () => {
     const normalized = normalizeHeadlessStream(result.stdout, runCwd)
     if (refreshing) await writeFile(compactionStreamExpected, normalized)
     expect(normalized).toBe(await readFile(compactionStreamExpected, 'utf8'))
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+
+  it('runs the tool round trip through a connector execution world', async () => {
+    const streamExpected = join(connectorScenarioDir, 'stream-json.expected.jsonl')
+    const sessionExpected = join(connectorScenarioDir, 'session.expected.jsonl')
+    const task = 'Read the probe file through the connector.'
+    let runCwd = ''
+    const result = await runLoaderSmoke({
+      label: 'connector execution world headless snapshot',
+      tempDirPrefix: 'headless-snapshot-connector-',
+      binScript,
+      libBinScript: binScript,
+      configPath: connectorConfigPath,
+      binArgs: [connectorConfigPath, task],
+      tsconfigPath,
+      env: {
+        DSH_SNAPSHOT: 'connector',
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await writeFile(join(cwd, 'connector-probe.txt'), 'CONNECTOR_PROBE_OK\n')
+      },
+      inspect: async (cwd) => {
+        const logs = await persistedLogs(cwd)
+        expect(logs).toHaveLength(1)
+        const actual = logs[0]
+        if (actual === undefined) throw new Error('the connector composition did not persist its session')
+        const session = normalizeSessionSnapshot(actual.content, contextFromLogs([actual.content]))
+        if (refreshing) await writeFile(sessionExpected, session)
+        await expect(session).toMatchFileSnapshot(sessionExpected)
+        // The target block is what the connector adds to every model request.
+        expect(session).toContain('run on connector \\"local\\"')
+      },
+    })
+
+    expect(result.stderr).toBe('')
+    const normalized = normalizeHeadlessStream(result.stdout, runCwd)
+    if (refreshing) await writeFile(streamExpected, normalized)
+    expect(normalized).toBe(await readFile(streamExpected, 'utf8'))
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
   it('logs actionable missing-credential guidance through the one-shot app', async () => {

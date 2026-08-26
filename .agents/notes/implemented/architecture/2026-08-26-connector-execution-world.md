@@ -40,6 +40,8 @@ The TCP agent is an unconfined remote-execution surface guarded by one shared to
 
 Package suites pin the registry's resolution, memoization, and disposal; the session fold and its write path; frame encoding, validation, and limits; the host's projection of both seams over a temporary directory; and both capability providers driven through a real in-process connector, including the routing proof that a session bound to a different connector reaches a different machine. The transport is exercised end to end against a real agent over a real socket — handshake refusals, cancellation, process streaming, protocol violations, a client that resets its connection, and a client that leaves mid-call — and against a scripted peer for the answers no real agent produces.
 
+The `connector-execution-world` headless snapshot boots the shipped one-shot application with its execution world on a connector and pins the assembled transcript: the target block in the request, the bash call routed through the connector operation set, and the target's file content in the answer. It runs the in-process host, because a remote target answers the same operation set and the transcript cannot tell them apart.
+
 ## Alternatives considered
 
 **Keep the binding in memory, seeded at agent creation.** Rejected because a conversation's target machine is part of what the conversation is. An in-memory map is lost on restart and invisible to replay, so a resumed session would silently run on the deployment default — a different machine than the transcript describes.

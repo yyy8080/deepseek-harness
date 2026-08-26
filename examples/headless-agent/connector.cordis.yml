@@ -17,9 +17,9 @@
 # agent confirms both in its handshake and the link is refused when the
 # declaration disagrees.
 #
-# One-world invariant: the connector's workdir and sandbox-policy.workspaceRoot
-# must name the same directory in the TARGET's world. For a remote connector
-# that is a path on the target, not on this machine.
+# One-world invariant: every path a consumer resolves belongs to the TARGET's
+# world. A composition that also mounts a workspace-scoped policy must name a
+# directory on the target, not on this machine.
 - id: base
   name: '@deepseek-ai/cordis-plugin-include'
   config:
@@ -56,8 +56,3 @@
             name: '@deepseek-ai/dsh-subprocess-connector'
           - id: fs-connector
             name: '@deepseek-ai/dsh-fs-connector'
-          - id: sandbox-policy
-            name: '@deepseek-ai/dsh-sandbox-policy'
-            config:
-              mode: danger-full-access
-              workspaceRoot: !!js process.cwd()
