@@ -207,6 +207,18 @@ importers:
       '@deepseek-ai/dsh-plan-mode':
         specifier: workspace:^
         version: link:../../packages/plan/plan-mode
+      '@deepseek-ai/dsh-plugin-install':
+        specifier: workspace:^
+        version: link:../../packages/marketplace/plugin-install
+      '@deepseek-ai/dsh-plugin-manifest':
+        specifier: workspace:^
+        version: link:../../packages/marketplace/plugin-manifest
+      '@deepseek-ai/dsh-plugin-registry':
+        specifier: workspace:^
+        version: link:../../packages/marketplace/plugin-registry
+      '@deepseek-ai/dsh-plugin-registry-static':
+        specifier: workspace:^
+        version: link:../../packages/marketplace/plugin-registry-static
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:^
         version: link:../../packages/shell/pwsh-local

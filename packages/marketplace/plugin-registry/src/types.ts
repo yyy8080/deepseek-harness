@@ -75,11 +75,13 @@ export interface PluginUpdate {
  * A provider returns its complete catalog and does no matching: search
  * ranking, version selection, and update detection live in the seam so every
  * source answers a query the same way.
+ *
+ * There is no usability predicate: a registered source is one an operator
+ * configured, so a source that cannot be read is a failure naming what broke,
+ * not a provider that quietly drops out of the merge.
  */
 export interface PluginCatalogProvider {
   readonly id: string
-  /** Cheap local usability check; must not make network calls. */
-  available(): boolean
   /** Read the provider's complete catalog; honor `signal` for cancellation. */
   catalog(signal?: AbortSignal): Promise<readonly PluginListing[]>
 }
@@ -87,8 +89,8 @@ export interface PluginCatalogProvider {
 /**
  * Typed registry error with a machine-routable `code`. Codes:
  * `PLUGIN_REGISTRY_DUPLICATE_PROVIDER` (two providers claim one id),
- * `PLUGIN_REGISTRY_UNAVAILABLE` (no usable provider is registered),
- * `PLUGIN_REGISTRY_DUPLICATE_LISTING` (two usable providers list one plugin id),
+ * `PLUGIN_REGISTRY_UNAVAILABLE` (no provider is registered),
+ * `PLUGIN_REGISTRY_DUPLICATE_LISTING` (two providers list one plugin id),
  * `PLUGIN_REGISTRY_EMPTY_RELEASES` (a provider returned a listing with no
  * release), and `PLUGIN_REGISTRY_UNKNOWN_PLUGIN` (no catalog lists the
  * requested id). A provider adds its own codes for source failures.

@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-plugin-registry-static/provider
  */
 
-import { existsSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import z from '@deepseek-ai/schemastery'
@@ -166,16 +166,6 @@ export class StaticPluginCatalogProvider implements PluginCatalogProvider {
 
   constructor(options: StaticPluginCatalogProviderOptions) {
     this.location = resolveIndexLocation(options.index, options.base)
-  }
-
-  /**
-   * Whether the configured index can be read without a network call. An HTTP
-   * index is always reported usable — reachability is only knowable by
-   * fetching it, which this check must not do.
-   * @returns true unless a filesystem index is missing.
-   */
-  available(): boolean {
-    return isHttpSource(this.location.label) || existsSync(this.location.label)
   }
 
   /**

@@ -89,21 +89,21 @@ export class PluginRegistry extends Service {
   }
 
   /**
-   * Read every usable provider's catalog and merge it into one id-keyed index.
+   * Read every registered provider's catalog and merge it into one id-keyed index.
    * @param signal - optional cancellation signal forwarded to every provider.
    * @returns the merged catalog, keyed by plugin id.
    * @throws PluginRegistryError `PLUGIN_REGISTRY_UNAVAILABLE` when no provider
-   * is usable, `PLUGIN_REGISTRY_DUPLICATE_LISTING` when two providers list one
-   * plugin, or `PLUGIN_REGISTRY_EMPTY_RELEASES` for a listing with no release.
+   * is registered, `PLUGIN_REGISTRY_DUPLICATE_LISTING` when two providers list
+   * one plugin, or `PLUGIN_REGISTRY_EMPTY_RELEASES` for a listing with no release.
    */
   async catalog(signal?: AbortSignal): Promise<ReadonlyMap<PluginId, PluginListing>> {
-    const usable = [...this.providers.values()].filter(provider => provider.available())
-    if (usable.length === 0) {
-      throw new PluginRegistryError('no usable plugin catalog provider is registered', 'PLUGIN_REGISTRY_UNAVAILABLE')
+    const registered = [...this.providers.values()]
+    if (registered.length === 0) {
+      throw new PluginRegistryError('no plugin catalog provider is registered', 'PLUGIN_REGISTRY_UNAVAILABLE')
     }
     const merged = new Map<PluginId, PluginListing>()
     const owners = new Map<PluginId, string>()
-    for (const provider of usable) {
+    for (const provider of registered) {
       for (const listing of await provider.catalog(signal)) {
         const id = listing.manifest.id
         const owner = owners.get(id)

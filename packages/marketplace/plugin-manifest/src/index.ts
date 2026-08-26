@@ -33,6 +33,16 @@ export type {
 } from './types.ts'
 
 /**
+ * The single wording every surface uses when it shows declared capabilities.
+ * A plugin mounts with the same authority as an in-box plugin, so a person
+ * deciding whether to install one must not read the declaration as a limit
+ * the harness imposes. Shared here so a command line and a settings panel
+ * cannot drift into two different promises.
+ */
+export const DECLARED_CAPABILITIES_NOTICE
+  = 'Declared by the publisher and not enforced: an installed plugin runs with full harness authority regardless of what it declares.'
+
+/**
  * Brand a package name as a plugin identity at the boundary that owns the
  * name: a catalog reader, a manifest reader, or a command line.
  * @param value - the npm package name.
