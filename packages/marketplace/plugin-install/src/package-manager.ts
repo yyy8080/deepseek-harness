@@ -59,14 +59,19 @@ export interface PackageManagerRun {
 export interface PackageManagerResult {
   /** pnpm's exit code (1 when it failed without one). */
   readonly exitCode: number
-  /** Captured standard error, or an empty string under `inherit`. */
-  readonly stderr: string
+  /**
+   * The run's captured output, or an empty string under `inherit`. pnpm prints
+   * its own diagnostics on standard output rather than standard error, so both
+   * streams are joined: a caller explaining a failure needs whichever one the
+   * reason landed on.
+   */
+  readonly output: string
 }
 
 /**
  * Run one pnpm invocation in a profile directory.
  * @param run - the directory, arguments, and stream disposition.
- * @returns the exit code and captured standard error.
+ * @returns the exit code and captured output.
  * @throws PluginInstallError `PLUGIN_INSTALL_PACKAGE_MANAGER_MISSING` when pnpm is not on PATH.
  */
 export function runPackageManager(run: PackageManagerRun): PackageManagerResult {
@@ -89,5 +94,7 @@ export function runPackageManager(run: PackageManagerRun): PackageManagerResult 
     }
     throw result.error
   }
-  return { exitCode: result.status ?? 1, stderr: result.stderr ?? '' }
+  // A signalled run reports no status; a plugin operation only distinguishes
+  // success from failure, so any absent status counts as failure.
+  return { exitCode: result.status ?? 1, output: `${result.stdout ?? ''}${result.stderr ?? ''}`.trim() }
 }

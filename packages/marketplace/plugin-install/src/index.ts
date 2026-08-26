@@ -23,8 +23,8 @@ import {
   writeProfileManifest,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
-import { pluginId, readPluginManifest, type PluginId } from '@deepseek-ai/dsh-plugin-manifest'
-import { anchorPathSpec, runPackageManager } from './package-manager.ts'
+import { pluginId, readPluginManifest, type PluginId, type PluginManifest } from '@deepseek-ai/dsh-plugin-manifest'
+import { anchorPathSpec, runPackageManager, type PackageManagerResult } from './package-manager.ts'
 import { BIN_NAME, reconcileBundles, resolveInstalledDir, type ReconcileWarn } from './reconcile.ts'
 import {
   PluginInstallError,
@@ -95,31 +95,67 @@ export function resolve(request: InstallRequest): InstallSpec {
   }
 }
 
-/** Name the one dependency a package-manager run added or re-pointed. */
-function installedName(before: ProfileManifest, after: ProfileManifest, packageSpec: string): string {
-  const beforeDeps = before.dependencies ?? {}
-  const afterDeps = after.dependencies ?? {}
-  const added = Object.keys(afterDeps).filter(dependency => !(dependency in beforeDeps))
-  const [firstAdded] = added
-  if (added.length === 1 && firstAdded !== undefined) return firstAdded
-  // Reinstalling an already-present plugin adds no dependency; the same name
-  // is simply re-pointed at the new tarball.
-  const repointed = Object.keys(afterDeps).filter(
-    dependency => dependency in beforeDeps && afterDeps[dependency] !== beforeDeps[dependency],
-  )
-  const [firstRepointed] = repointed
-  if (added.length === 0 && repointed.length === 1 && firstRepointed !== undefined) return firstRepointed
-  throw new PluginInstallError(
-    `installing ${packageSpec} added no single dependency to the profile (added: ${added.join(', ') || 'none'})`,
-    'PLUGIN_INSTALL_NO_PACKAGE',
-  )
+/** A manifest's dependency map; the package manager drops the key when the last one goes. */
+function dependenciesOf(manifest: ProfileManifest): Readonly<Record<string, string>> {
+  return manifest.dependencies ?? {}
 }
 
-/** Read an installed package's version, or report it as unknown when the package.json omits one. */
-function installedVersion(packageDir: string | undefined): string {
-  if (packageDir === undefined) return 'unknown'
+/**
+ * Name the dependency one package-manager run installed under.
+ *
+ * The run's own effect names it whenever the manifest moved: exactly one entry
+ * is added (a first install) or re-pointed (an upgrade). Reinstalling the
+ * version already present moves nothing, so the entry recording this exact
+ * specifier answers too — pnpm writes a local tarball as `file:` plus the path
+ * it was handed and a remote one as the URL verbatim.
+ */
+function installedName(before: ProfileManifest, after: ProfileManifest, spec: InstallSpec): string {
+  const beforeDeps = dependenciesOf(before)
+  const recorded = new Set([spec.packageSpec, `file:${spec.packageSpec}`])
+  const installed = Object.entries(dependenciesOf(after))
+    .filter(([dependency, value]) => value !== beforeDeps[dependency] || recorded.has(value))
+    .map(([dependency]) => dependency)
+  const [only, ...rest] = installed
+  if (rest.length > 0) {
+    throw new PluginInstallError(
+      `installing ${spec.packageSpec} matches several profile dependencies (${installed.join(', ')}) `
+      + `— remove the duplicate entry from ${spec.profileDir}`,
+      'PLUGIN_INSTALL_NO_PACKAGE',
+    )
+  }
+  /* v8 ignore next 5 -- pnpm reported success, so one entry records the specifier it was handed */
+  if (only === undefined) {
+    throw new PluginInstallError(
+      `installing ${spec.packageSpec} left no matching dependency in ${spec.profileDir}`,
+      'PLUGIN_INSTALL_NO_PACKAGE',
+    )
+  }
+  return only
+}
+
+/**
+ * Describe one of a profile's dependencies from what is actually installed.
+ * A dependency the profile declares but has not installed reports an unknown
+ * version and no marketplace metadata rather than failing the whole read.
+ */
+function describeInstalled(name: string, profileDir: string, installAnchor: string): {
+  version: string
+  manifest?: PluginManifest
+} {
+  const packageDir = resolveInstalledDir(name, profileDir, installAnchor)
+  if (packageDir === undefined) return { version: 'unknown' }
   const version = (readProfileManifest(BIN_NAME, packageDir) as { version?: unknown }).version
-  return typeof version === 'string' ? version : 'unknown'
+  const manifest = readPluginManifest(packageDir)
+  return {
+    version: typeof version === 'string' ? version : 'unknown',
+    ...manifest === undefined ? {} : { manifest },
+  }
+}
+
+/** Build the diagnostic for a package-manager run that exited non-zero. */
+function packageManagerFailure(action: string, where: string, run: PackageManagerResult): PluginInstallError {
+  const detail = run.output === '' ? '' : `: ${run.output}`
+  return new PluginInstallError(`pnpm failed to ${action} ${where} (exit ${run.exitCode})${detail}`, 'PLUGIN_INSTALL_FAILED')
 }
 
 /** Record one install's provenance in the profile manifest. */
@@ -165,23 +201,17 @@ export function install(spec: InstallSpec, options: OperationOptions = {}): Inst
     stdio: options.stdio ?? 'pipe',
   })
   if (run.exitCode !== 0) {
-    throw new PluginInstallError(
-      `pnpm failed to install ${spec.packageSpec} into ${spec.profileDir} (exit ${run.exitCode})${run.stderr === '' ? '' : `: ${run.stderr.trim()}`}`,
-      'PLUGIN_INSTALL_FAILED',
-    )
+    throw packageManagerFailure('install', `${spec.packageSpec} into ${spec.profileDir}`, run)
   }
   const after = readProfileManifest(BIN_NAME, spec.profileDir)
-  const name = installedName(before, after, spec.packageSpec)
-  const added = reconcileBundles(before, spec.profileDir, spec.installAnchor, message => options.warn?.(message))
+  const name = installedName(before, after, spec)
+  const added = reconcileBundles(before, spec.profileDir, spec.installAnchor, options.warn)
   const provenance: PluginProvenance = { ...spec.provenance, installedAt: new Date().toISOString() }
   recordProvenance(spec.profileDir, name, provenance)
-  const packageDir = resolveInstalledDir(name, spec.profileDir, spec.installAnchor)
-  const manifest = packageDir === undefined ? undefined : readPluginManifest(packageDir)
   return {
     id: pluginId(name),
-    version: installedVersion(packageDir),
     bundle: added.includes(name),
-    ...manifest === undefined ? {} : { manifest },
+    ...describeInstalled(name, spec.profileDir, spec.installAnchor),
     provenance,
   }
 }
@@ -201,18 +231,13 @@ export function uninstall(target: ProfileTarget, id: PluginId, options: Operatio
     throw new PluginInstallError(`profile ${target.profile} has no installed plugins`, 'PLUGIN_INSTALL_NOT_INSTALLED')
   }
   const before = readProfileManifest(BIN_NAME, profileDir)
-  if (!(id in (before.dependencies ?? {}))) {
+  if (!(id in dependenciesOf(before))) {
     throw new PluginInstallError(`profile ${target.profile} does not depend on ${id}`, 'PLUGIN_INSTALL_NOT_INSTALLED')
   }
   const bundle = (before.dsh?.profile?.bundles ?? []).includes(id)
   const run = runPackageManager({ cwd: profileDir, args: ['remove', id], stdio: options.stdio ?? 'pipe' })
-  if (run.exitCode !== 0) {
-    throw new PluginInstallError(
-      `pnpm failed to remove ${id} from ${profileDir} (exit ${run.exitCode})${run.stderr === '' ? '' : `: ${run.stderr.trim()}`}`,
-      'PLUGIN_INSTALL_FAILED',
-    )
-  }
-  reconcileBundles(before, profileDir, target.installAnchor, message => options.warn?.(message))
+  if (run.exitCode !== 0) throw packageManagerFailure('remove', `${id} from ${profileDir}`, run)
+  reconcileBundles(before, profileDir, target.installAnchor, options.warn)
   forgetProvenance(profileDir, id)
   return { id, bundle }
 }
@@ -229,15 +254,12 @@ export function list(target: ProfileTarget): readonly InstalledPlugin[] {
   const manifest = readProfileManifest(BIN_NAME, profileDir)
   const bundles = new Set(manifest.dsh?.profile?.bundles ?? [])
   const installs = manifest.dsh?.marketplace?.installs ?? {}
-  return Object.keys(manifest.dependencies ?? {}).sort((left, right) => left.localeCompare(right)).map((name) => {
-    const packageDir = resolveInstalledDir(name, profileDir, target.installAnchor)
-    const plugin = packageDir === undefined ? undefined : readPluginManifest(packageDir)
+  return Object.keys(dependenciesOf(manifest)).sort((left, right) => left.localeCompare(right)).map((name) => {
     const provenance = installs[name]
     return {
       id: pluginId(name),
-      version: installedVersion(packageDir),
       bundle: bundles.has(name),
-      ...plugin === undefined ? {} : { manifest: plugin },
+      ...describeInstalled(name, profileDir, target.installAnchor),
       ...provenance === undefined ? {} : { provenance },
     }
   })

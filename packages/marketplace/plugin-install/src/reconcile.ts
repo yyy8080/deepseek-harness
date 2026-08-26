@@ -59,11 +59,11 @@ export type ReconcileWarn = (message: string) => void
  * @param before - the profile manifest as it was before the run.
  * @param profileDir - the profile directory.
  * @param installAnchor - the launching app's package.json.
- * @param warn - sink for the one-line notice a newly added bundle-less dependency produces.
+ * @param warn - sink for the one-line notice a newly added bundle-less dependency produces; omitted stays silent.
  * @returns the bundle names added to the layer stack by this reconciliation.
  */
 export function reconcileBundles(
-  before: ProfileManifest, profileDir: string, installAnchor: string, warn: ReconcileWarn,
+  before: ProfileManifest, profileDir: string, installAnchor: string, warn?: ReconcileWarn,
 ): readonly string[] {
   const after = readProfileManifest(BIN_NAME, profileDir)
   const beforeDeps = new Set(Object.keys(before.dependencies ?? {}))
@@ -76,7 +76,7 @@ export function reconcileBundles(
       bundles.push(packageName)
       added.push(packageName)
     } else if (!isBundle && !beforeDeps.has(packageName)) {
-      warn(
+      warn?.(
         `${packageName} declares no dsh.bundle — installed as a plain dependency, not a profile layer `
         + '(a later update that gains one activates it automatically)',
       )

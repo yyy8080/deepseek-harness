@@ -67,6 +67,12 @@ function isHttpSource(source: string): boolean {
   return /^https?:\/\//.test(source)
 }
 
+/** The reason to quote from a caught failure. */
+function reasonOf(error: unknown): string {
+  /* v8 ignore next -- JSON.parse, schemastery, fetch, and readFileSync all fail by throwing an Error */
+  return error instanceof Error ? error.message : String(error)
+}
+
 /**
  * Resolve a configured index source into its location.
  * @param source - an `http(s):` URL, a `file:` URL, or a filesystem path.
@@ -114,7 +120,7 @@ function parseReleases(entry: unknown, id: string, location: IndexLocation): Plu
     releases = IndexEntryReleasesSchema(entry as { releases: IndexRelease[] }).releases
   } catch (error) {
     throw new PluginRegistryError(
-      `${location.label}: plugin "${id}" has an invalid releases list: ${error instanceof Error ? error.message : String(error)}`,
+      `${location.label}: plugin "${id}" has an invalid releases list: ${reasonOf(error)}`,
       'PLUGIN_CATALOG_INVALID',
       { cause: error },
     )
@@ -133,7 +139,7 @@ function parseIndex(text: string, location: IndexLocation): PluginListing[] {
     frame = IndexFrameSchema(JSON.parse(text))
   } catch (error) {
     throw new PluginRegistryError(
-      `${location.label}: not a valid marketplace index document: ${error instanceof Error ? error.message : String(error)}`,
+      `${location.label}: not a valid marketplace index document: ${reasonOf(error)}`,
       'PLUGIN_CATALOG_INVALID',
       { cause: error },
     )
@@ -183,7 +189,7 @@ export class StaticPluginCatalogProvider implements PluginCatalogProvider {
     } catch (error) {
       if (error instanceof PluginRegistryError) throw error
       throw new PluginRegistryError(
-        `${this.location.label}: cannot read the marketplace index: ${error instanceof Error ? error.message : String(error)}`,
+        `${this.location.label}: cannot read the marketplace index: ${reasonOf(error)}`,
         'PLUGIN_CATALOG_UNREADABLE',
         { cause: error },
       )

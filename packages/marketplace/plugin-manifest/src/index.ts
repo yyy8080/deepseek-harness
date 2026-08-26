@@ -86,10 +86,27 @@ export const PluginSectionSchema: z<PluginSection> = z.object({
 export function parsePluginSection(value: unknown, source: string): PluginSection {
   try {
     // The schema is the validation; the cast only satisfies its typed callable.
-    return PluginSectionSchema(value as PluginSection)
+    const parsed = PluginSectionSchema(value as PluginSection)
+    // Projected field by field: schemastery passes unknown keys through, and a
+    // catalog entry carries its release list beside the manifest fields — a
+    // verbatim return would republish that list as plugin metadata.
+    return {
+      displayName: parsed.displayName,
+      description: parsed.description,
+      publisher: parsed.publisher,
+      capabilities: {
+        tools: parsed.capabilities.tools,
+        filesystem: parsed.capabilities.filesystem,
+        network: parsed.capabilities.network,
+        subprocess: parsed.capabilities.subprocess,
+      },
+      ...parsed.homepage === undefined ? {} : { homepage: parsed.homepage },
+    }
   } catch (error) {
+    /* v8 ignore next -- schemastery rejects a value by throwing an Error, never a bare value */
+    const detail = error instanceof Error ? error.message : String(error)
     throw new PluginManifestError(
-      `${source}: invalid dsh.plugin section: ${error instanceof Error ? error.message : String(error)}`,
+      `${source}: invalid dsh.plugin section: ${detail}`,
       'PLUGIN_MANIFEST_INVALID',
       { cause: error },
     )
@@ -137,8 +154,10 @@ export function readPluginManifest(packageDir: string): PluginManifest | undefin
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
   } catch (error) {
+    /* v8 ignore next -- readFileSync and JSON.parse both fail by throwing an Error */
+    const detail = error instanceof Error ? error.message : String(error)
     throw new PluginManifestError(
-      `${path}: cannot read package manifest: ${error instanceof Error ? error.message : String(error)}`,
+      `${path}: cannot read package manifest: ${detail}`,
       'PLUGIN_MANIFEST_UNREADABLE',
       { cause: error },
     )
