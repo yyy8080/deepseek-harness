@@ -43,7 +43,7 @@ Possession of a pack is complete read, write, and command access to the machine 
 
 ## Model Experience
 
-Indirectly. An attached target becomes a connector like any other, so the description [`dsh-connector`](../../connector/connector/README.md) contributes to the system prompt and the operations [`dsh-fs-connector`](../../connector/fs-connector/README.md) and [`dsh-subprocess-connector`](../../connector/subprocess-connector/README.md) render are what the model sees. This package contributes no tool and no prompt text of its own.
+Indirectly, through [`dsh-connector`](../../connector/connector/README.md), whose target description an attached machine joins, and the connector-backed providers that render every operation against it.
 
 #### KV Cache effect
 

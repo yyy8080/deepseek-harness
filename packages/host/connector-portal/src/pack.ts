@@ -57,12 +57,20 @@ export function assertPackOrigin(value: string): string {
   return url.origin
 }
 
-/** File name a target saves one pack under. */
+/**
+ * File name a target saves one pack under.
+ * @param os - target family the pack was generated for.
+ * @returns the download's file name.
+ */
 export function packFileName(os: ConnectorPackOs): string {
   return os === 'windows' ? 'dsh-connector.ps1' : 'dsh-connector.sh'
 }
 
-/** Media type a pack download is served with. */
+/**
+ * Media type a pack download is served with.
+ * @param os - target family the pack was generated for.
+ * @returns the response's content type.
+ */
 export function packContentType(os: ConnectorPackOs): string {
   return os === 'windows' ? 'text/plain; charset=utf-8' : 'text/x-shellscript; charset=utf-8'
 }

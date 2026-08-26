@@ -43,13 +43,13 @@
 
 ## 模型体验
 
-间接。已接入的目标就是一个普通连接器，因此 [`dsh-connector`](../../connector/connector/README.zh.md) 向系统提示词贡献的目标描述，以及 [`dsh-fs-connector`](../../connector/fs-connector/README.zh.md) 与 [`dsh-subprocess-connector`](../../connector/subprocess-connector/README.zh.md) 渲染的操作，才是模型看到的东西。本包不贡献任何工具或提示词文本。
+间接地，通过 [`dsh-connector`](../../connector/connector/README.zh.md)——已接入的机器会加入它向系统提示词贡献的目标描述——以及渲染针对该机器每一次操作的连接器版 provider。
 
-#### KV 缓存影响
+#### KV Cache 影响
 
 无直接影响；把会话绑定到新接入的目标会改变连接器描述所拥有的那段前缀。
 
-## 已知限制与未尽事项
+## 已知限制与暂缓事项
 
 - **会话绑定不在本入口内** — 页面会给出每台已接入机器的连接器 id，会话则通过挂载连接器版文件系统与子进程 provider 的 agent preset 抵达它。从浏览器为每场对话挑选目标尚未实现。
 - **账本不持久** — 登记记录撑不过 harness 重启，长期驻留的目标机器在重启后需要一份新的 pack。

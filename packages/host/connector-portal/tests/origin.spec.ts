@@ -4,6 +4,7 @@
  * canonical authority must yield nothing rather than a guess.
  */
 
+import type { IncomingHttpHeaders } from 'node:http'
 import { describe, expect, it } from 'vitest'
 import { requestOrigin } from '../src/origin.ts'
 
@@ -29,9 +30,12 @@ describe('requestOrigin', () => {
       .toBe('http://harness.example.com')
   })
 
-  it.each([
+  // A repeated Host reaches the handler as a list, which `IncomingHttpHeaders`
+  // does not describe for this header; the cast states the wire fact the type
+  // omits rather than weakening the function's parameter.
+  it.each<[string, IncomingHttpHeaders]>([
     ['no Host at all', {}],
-    ['a repeated Host', { host: ['a.example.com', 'b.example.com'] }],
+    ['a repeated Host', { host: ['a.example.com', 'b.example.com'] as unknown as string }],
     ['a Host carrying a path', { host: 'harness.example.com/evil' }],
     ['a Host carrying credentials', { host: 'user@harness.example.com' }],
     ['a Host carrying a query', { host: 'harness.example.com?x=1' }],
