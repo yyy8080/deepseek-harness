@@ -1,5 +1,7 @@
 # @deepseek-ai/dsh-instance-gateway
 
+English | [中文](README.zh.md)
+
 Multiplexing API gateway over the [instance seam](../instance/README.md). It provides `ctx.apiProxy`, so every carrier already mounted by `@deepseek-ai/dsh-client-connection` — the `/api` HTTP bridge, the `events.mux` and `events.host` WebSocket downlinks, and the session-log download — keeps working while the conversations behind them run inside separate isolated runtimes.
 
 Mount it **instead of** `@deepseek-ai/dsh-host-apiproxy`'s own `ApiProxyService`; both provide the same service name, and two providers of one service fail the load.
@@ -54,7 +56,11 @@ An unregistered `provider` fails the first placement, not the load: providers re
 
 ## Model Experience
 
-No effect on model input. The gateway sits above the agent loop: it decides which runtime a conversation's turns execute in, and never contributes to a prompt, a tool schema, or the KV-cache prefix. A conversation's model-visible context is entirely its own instance's.
+None, as the gateway routes already-composed API messages between runtimes; the instance a conversation lands in owns every prompt, tool schema, and session event that conversation's model sees.
+
+#### KV Cache effect
+
+None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 

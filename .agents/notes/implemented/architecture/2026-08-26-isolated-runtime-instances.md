@@ -2,6 +2,8 @@
 
 Status: implemented
 
+English | [中文](2026-08-26-isolated-runtime-instances.zh.md)
+
 ## Problem
 
 A harness process is one runtime: one filesystem, one shell, one session store, one agent. Every conversation a client creates shares them. Two conversations editing the same repository interleave their working-tree changes; a command one runs is visible to the other; a runaway process in one is a runaway process in all of them.

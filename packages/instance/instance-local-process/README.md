@@ -15,23 +15,15 @@ Local-process Service Provider for the [instance seam](../instance/README.md). E
 
 ## Model Experience
 
-### Indirect consumer
-
-#### What the model sees
-
-Nothing directly. A model running inside a worker sees an ordinary harness whose home and working directory happen to be private to its instance.
-
-#### Token effect
-
-None directly.
+None, as the provider only supervises child harness processes; the worker bundle each one boots owns every prompt, tool, and session event a model there sees.
 
 #### KV Cache effect
 
-No direct invalidation.
+None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
 - Isolation is filesystem- and process-scoped only. A worker shares the kernel, network namespace, and user account of the control plane, so this provider is a development and single-tenant answer, not a security boundary. A container or remote-sandbox provider behind the same seam is the multi-tenant answer.
-- Worker output is discarded (`stdio: ignore`). Diagnosing a worker that fails to start means running its command by hand; forwarding worker logs into the control plane's logger needs a stream-ownership decision the seam does not yet make.
+- Worker output is inherited, so a worker's diagnostics land on the control plane's own streams unlabelled. Attributing a line to the instance that wrote it needs a stream-ownership decision the seam does not yet make.
 - Nothing bounds concurrent instances, and each one is a full harness process. A control plane that creates instances per conversation must impose its own ceiling.
 - A control-plane crash orphans running workers: they are only reachable through this process's handles, and nothing re-adopts them on the next boot.

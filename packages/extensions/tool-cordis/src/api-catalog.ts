@@ -881,6 +881,73 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'instanceGateway',
+    summary: 'The multiplexing API gateway.',
+    description: 'The multiplexing API gateway. Provides `ctx.apiProxy` and, under its own name, the placement entry point instance CRUD consumers share.',
+    methods: [
+      {
+        signature: 'async placeConversation(conversationKey: string): Promise<InstanceView>',
+        description: 'Resolve one running instance, starting it when the placement policy asks for a runtime that does not exist yet. The single entry point every "new conversation" path goes through, exposed so an instance-CRUD consumer can pre-warm the same runtime the next `session.create` would resolve.',
+        parameters: [{ name: 'conversationKey', description: 'stable key of the conversation being placed; `per-conversation` derives the instance label from it so a retried create lands on the same runtime.' }],
+        returns: 'the resolved instance, guaranteed running.',
+      },
+    ],
+  },
+  {
+    key: 'instances',
+    summary: 'Owner of instance identity, state, and publication.',
+    description: 'Owner of instance identity, state, and publication. Providers own how a runtime is isolated and started; this registry owns what exists, what state it is in, and who is told about it.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: InstanceProvider): () => void',
+        description: 'Register one runtime backend.',
+        parameters: [{ name: 'provider', description: 'the backend implementation; its `name` is the registry key.' }],
+        returns: 'the disposer removing the registration.',
+      },
+      {
+        signature: 'create(request: InstanceCreateRequest): InstanceView',
+        description: 'Register one instance in the `stopped` state. Creation never starts a runtime — placement decides that, so a control plane can present the catalog before paying for a cold start.',
+        parameters: [{ name: 'request', description: 'provider name and human-facing label.' }],
+        returns: 'the new instance\'s published state.',
+      },
+      {
+        signature: 'list(): InstanceView[]',
+        description: 'Read the whole registry.',
+        parameters: [],
+        returns: 'every registered instance\'s published state, in creation order.',
+      },
+      {
+        signature: 'get(id: InstanceId): InstanceView | undefined',
+        description: 'Read one instance\'s published state.',
+        parameters: [{ name: 'id', description: 'the instance identity.' }],
+        returns: 'the current view, or `undefined` when no such instance exists.',
+      },
+      {
+        signature: 'async start(id: InstanceId): Promise<InstanceView>',
+        description: 'Drive one instance to `running`, joining an in-flight transition rather than starting a second runtime. A previous failure is cleared by the attempt, so a retry reports only its own outcome.',
+        parameters: [{ name: 'id', description: 'the instance identity.' }],
+        returns: 'the instance\'s published state once the transition settles.',
+      },
+      {
+        signature: 'async stop(id: InstanceId): Promise<InstanceView>',
+        description: 'Drive one instance to `stopped`, joining an in-flight transition. A stop whose runtime rejects leaves the instance `failed`: the registry does not know whether the runtime is gone, and saying `stopped` would be a lie.',
+        parameters: [{ name: 'id', description: 'the instance identity.' }],
+        returns: 'the instance\'s published state once the transition settles.',
+      },
+      {
+        signature: 'async remove(id: InstanceId): Promise<void>',
+        description: 'Stop one instance if needed and drop it from the registry. Removal is final: the id is never reused, so a stale reference fails loud instead of reaching a different runtime.',
+        parameters: [{ name: 'id', description: 'the instance identity.' }],
+      },
+      {
+        signature: 'async ensureRunning(request: InstanceCreateRequest): Promise<InstanceView>',
+        description: 'Resolve one running instance, creating and starting it when the label is not yet registered. This is the placement entry point: a control plane asking for "the runtime that hosts this conversation" gets a ready endpoint or a loud failure, never a half-started instance.',
+        parameters: [{ name: 'request', description: 'provider name and human-facing label.' }],
+        returns: 'the instance\'s published state, guaranteed `running`.',
+      },
+    ],
+  },
+  {
     key: 'invariants',
     summary: 'Package-owned invariant registry with global and regex-based selection.',
     description: 'Package-owned invariant registry with global and regex-based selection.',
@@ -2606,6 +2673,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.change - fresh current projection or clear tombstone.' }],
   },
   {
+    name: 'instance/changed',
+    mode: 'emit',
+    signature: '\'instance/changed\'(view: InstanceView): void',
+    summary: 'One instance\'s published state changed: creation, every lifecycle transition, and removal.',
+    description: 'One instance\'s published state changed: creation, every lifecycle transition, and removal. Emitted only after the transition is committed to the registry, so a listener reading `ctx.instances.list()` sees the same value the payload carries. Removal is announced with the final `stopped` or `failed` view followed by nothing further for that id.',
+    parameters: [{ name: 'view', description: 'the instance\'s complete published state after the change.' }],
+  },
+  {
     name: 'llm/adapters-updated',
     mode: 'emit',
     signature: '\'llm/adapters-updated\'(): void',
@@ -3488,6 +3563,38 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'InstanceCreateRequest',
+    declaration: 'export interface InstanceCreateRequest {\n    provider: string;\n    label: string;\n}',
+  },
+  {
+    name: 'InstanceDesiredState',
+    declaration: 'export type InstanceDesiredState = \'running\' | \'stopped\';',
+  },
+  {
+    name: 'InstanceEndpoint',
+    declaration: 'export interface InstanceEndpoint {\n    origin: string;\n    root: string;\n}',
+  },
+  {
+    name: 'InstanceLifecycle',
+    declaration: 'export type InstanceLifecycle = \'stopped\' | \'starting\' | \'running\' | \'stopping\' | \'failed\';',
+  },
+  {
+    name: 'InstanceProvider',
+    declaration: 'export interface InstanceProvider {\n    name: string;\n    start(request: InstanceStartRequest): Promise<InstanceRuntime>;\n}',
+  },
+  {
+    name: 'InstanceRuntime',
+    declaration: 'export interface InstanceRuntime {\n    endpoint: InstanceEndpoint;\n    stop(): Promise<void>;\n}',
+  },
+  {
+    name: 'InstanceStartRequest',
+    declaration: 'export interface InstanceStartRequest {\n    id: InstanceId;\n    label: string;\n    signal: AbortSignal;\n}',
+  },
+  {
+    name: 'InstanceView',
+    declaration: 'export interface InstanceView {\n    id: InstanceId;\n    label: string;\n    provider: string;\n    desired: InstanceDesiredState;\n    lifecycle: InstanceLifecycle;\n    endpoint?: InstanceEndpoint;\n    failure?: string;\n}',
   },
   {
     name: 'InvariantFailure',

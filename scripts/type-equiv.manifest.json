@@ -1001,6 +1001,26 @@
       "source": "packages/jobs/jobs/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/instance.md",
+      "symbol": "InstanceEndpoint",
+      "source": "packages/instance/instance/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/instance.md",
+      "symbol": "InstanceView",
+      "source": "packages/instance/instance/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/instance.md",
+      "symbol": "InstanceProvider",
+      "source": "packages/instance/instance/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/instance.md",
+      "symbol": "InstanceRuntime",
+      "source": "packages/instance/instance/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/terminal.md",
       "symbol": "TerminalWaitReason",
       "source": "packages/terminal/terminal/src/types.ts"

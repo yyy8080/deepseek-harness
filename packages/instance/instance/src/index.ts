@@ -209,7 +209,10 @@ export class InstanceRegistry extends Service {
     return this.publish(record)
   }
 
-  /** Every registered instance, in creation order. */
+  /**
+   * Read the whole registry.
+   * @returns every registered instance's published state, in creation order.
+   */
   list(): InstanceView[] {
     return [...this.records.values()].map(viewOf)
   }

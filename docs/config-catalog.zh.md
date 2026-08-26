@@ -873,6 +873,102 @@ export interface Config {
 
 来源：[`packages/host/webserver/src/index.ts:59`](../packages/host/webserver/src/index.ts)
 
+<a id="deepseek-aidsh-instance-gateway"></a>
+
+## `@deepseek-ai/dsh-instance-gateway`
+
+需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `instances` · `llm` · `sessions` · `subagents` · `sessionQuery` · `tools` · `userQuestions` · `workspaceRegistry`
+
+```ts config-catalog
+/** Gateway plugin configuration. */
+export interface Config {
+  /**
+   * Instance provider new conversations are placed on. An unregistered name
+   * fails the first placement loudly rather than at load, because providers
+   * register on their own fibers and may not have applied yet.
+   */
+  provider: string
+  /**
+   * `per-conversation` gives every new conversation its own runtime — full
+   * isolation at the cost of one cold start each. `shared` places every
+   * conversation in the single runtime named by {@link sharedLabel}, which is
+   * the cheap answer when a deployment wants isolation from the control plane
+   * rather than between sibling conversations.
+   */
+  placement?: InstancePlacement
+  /** Instance label `shared` placement resolves. */
+  sharedLabel?: string
+  /**
+   * Ceiling on registered instances. Placement past the ceiling fails loudly
+   * rather than queueing: each instance is a whole harness runtime, so silently
+   * waiting would present as a hung "new chat".
+   */
+  maxInstances?: number
+  /** Deadline for one unary call to an instance. The event streams are unbounded. */
+  requestTimeoutMs?: number
+}
+
+/** How the gateway chooses the runtime a new conversation is created in. */
+export type InstancePlacement = 'per-conversation' | 'shared'
+```
+
+来源：[`packages/instance/instance-gateway/src/index.ts:61`](../packages/instance/instance-gateway/src/index.ts)
+
+<a id="deepseek-aidsh-instance-local-process"></a>
+
+## `@deepseek-ai/dsh-instance-local-process`
+
+需要：`instances` · `subprocess`
+
+```ts config-catalog
+/** Plugin configuration. Every value varies by deployment; none is guessed. */
+export interface Config {
+  /**
+   * Executable that boots one worker runtime — the `dsh` binary in an
+   * installation, or the Node binary in a source checkout. Resolved through
+   * the subprocess seam's executable lookup, so a bare name uses PATH.
+   */
+  command: string
+  /**
+   * Arguments handed to {@link command}. They must boot a harness profile
+   * that serves `/api` on loopback and performs the endpoint handshake;
+   * `@deepseek-ai/dsh-worker` is the bundle that does.
+   */
+  args: string[]
+  /**
+   * Absolute directory under which each instance's private tree is created
+   * (`<root>/<instanceId>/home` and `<root>/<instanceId>/workspace`). A
+   * relative path is resolved against the control plane's working directory.
+   */
+  root: string
+  /**
+   * Environment entries added to every worker on top of the subprocess seam's
+   * scrubbed base. This is how a deployment forwards the credential the
+   * scrub strips — `{ DEEPSEEK_API_KEY: '...' }` — so nothing leaks
+   * implicitly.
+   */
+  env?: Record<string, string>
+  /**
+   * Parent environment names copied verbatim into every worker. Use it for
+   * credentials the control plane itself received; a name that is unset in
+   * the parent is skipped.
+   */
+  forwardEnv?: string[]
+  /** How long a worker may take to complete the endpoint handshake. @default 60000 */
+  readyTimeoutMs?: number
+  /** SIGTERM-to-SIGKILL grace for a worker's process tree. @default 5000 */
+  stopGraceMs?: number
+  /**
+   * Delete an instance's private tree when its worker stops. Off keeps the
+   * worker's session logs for inspection after the control plane exits.
+   * @default false
+   */
+  removeStateOnStop?: boolean
+}
+```
+
+来源：[`packages/instance/instance-local-process/src/index.ts:45`](../packages/instance/instance-local-process/src/index.ts)
+
 <a id="deepseek-aidsh-invariants"></a>
 
 ## `@deepseek-ai/dsh-invariants`
@@ -3190,6 +3286,33 @@ export interface Config {
 
 来源：[`packages/web/web-search-perplexity/src/index.ts:32`](../packages/web/web-search-perplexity/src/index.ts)
 
+<a id="deepseek-aidsh-worker"></a>
+
+## `@deepseek-ai/dsh-worker`
+
+需要：`webServer`
+
+```ts config-catalog
+/** Plugin config: how this worker announces the origin it bound. */
+export interface Config {
+  /**
+   * Absolute path of the instance seam's endpoint handshake file. Set by a
+   * supervising provider through `DSH_INSTANCE_ENDPOINT_FILE`; absent when a
+   * person boots the worker by hand, in which case the origin is printed.
+   */
+  endpointFile?: string
+  /**
+   * Register the model-visible isolation notice. A worker's agent shares no
+   * filesystem, session store, or shell state with the control plane, and
+   * saying so prevents it from offering to inspect things it cannot reach.
+   * @default true
+   */
+  surfaceContext?: boolean
+}
+```
+
+来源：[`packages/bundle/worker/src/index.ts:36`](../packages/bundle/worker/src/index.ts)
+
 <a id="deepseek-aidsh-workflow-worker-thread"></a>
 
 ## `@deepseek-ai/dsh-workflow-worker-thread`
@@ -3275,6 +3398,7 @@ export interface Config {
 - `@deepseek-ai/dsh-host-directory-picker-auto` — 需要 `webServer` · `loader`（[`packages/host/directory-picker-auto/src/index.ts`](../packages/host/directory-picker-auto/src/index.ts)）
 - `@deepseek-ai/dsh-host-directory-picker-native`（[`packages/host/directory-picker-native/src/index.ts`](../packages/host/directory-picker-native/src/index.ts)）
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
+- `@deepseek-ai/dsh-instance`（[`packages/instance/instance/src/index.ts`](../packages/instance/instance/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）

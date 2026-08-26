@@ -2,6 +2,8 @@
 
 Status: implemented
 
+[English](2026-08-26-isolated-runtime-instances.md) | 中文
+
 ## Problem
 
 一个 harness 进程就是一个运行时：一套文件系统、一个 shell、一个会话存储、一个 agent（智能体）。客户端创建的每个会话都共享它们。两个会话编辑同一个仓库时，工作树改动互相交错；其中一个执行的命令对另一个可见；其中一个里失控的进程就是全部会话里失控的进程。
@@ -14,11 +16,11 @@ Status: implemented
 
 **instance（实例）**是一等实体：一个类机器的隔离运行时，暴露一个 harness `/api` 网关并承载会话。四个包实现了它，而客户端保持不变。
 
-`@deepseek-ai/dsh-instance` 是 Service Definition（服务定义）。它拥有实例身份（带品牌的 `InstanceId`）、期望/观测状态机（`stopped` / `starting` / `running` / `stopping` / `failed`，对应 `running` / `stopped` 的期望状态）以及在 `instance/changed` 上的发布。它不拥有任何隔离机制。
+`@deepseek-ai/dsh-instance` 是 Service Definition。它拥有实例身份（branded `InstanceId`）、期望/观测状态机（`stopped` / `starting` / `running` / `stopping` / `failed`，对应 `running` / `stopped` 的期望状态）以及在 `instance/changed` 上的发布。它不拥有任何隔离机制。
 
-`@deepseek-ai/dsh-instance-local-process` 是第一个 Service Provider（服务提供者）：每个实例一个子 harness，各自拥有自己的 `DSH_HOME`、自己的 workspace 目录和自己的 loopback 端口，全部位于 `<root>/<instanceId>/` 之下。这里的隔离是文件系统与进程级的，不是内核级的。容器或远程 sandbox（沙箱）Provider 可以在不改动任何 Consumer（消费者）的情况下取代它——这正是这条能力缝存在的理由。
+`@deepseek-ai/dsh-instance-local-process` 是第一个 Service Provider：每个实例一个子 harness，各自拥有自己的 `DSH_HOME`、自己的 workspace 目录和自己的 loopback 端口，全部位于 `<root>/<instanceId>/` 之下。这里的隔离是文件系统与进程级的，不是内核级的。容器或远程沙箱 Provider 可以在不改动任何 Consumer 的情况下取代它——这正是这条 seam 存在的理由。
 
-`@deepseek-ai/dsh-worker` 是这些子进程启动的 bundle（打包层）：浏览器界面的宿主一半，去掉浏览器——一个 loopback `/api`，没有前端产物，没有客户端插件名册，没有原生打开转交。`dsh --profile worker` 就是 Provider 监督的那条命令。
+`@deepseek-ai/dsh-worker` 是这些子进程启动的组合包：浏览器界面的宿主一半，去掉浏览器——一个 loopback `/api`，没有前端产物，没有客户端插件名册，没有原生打开转交。`dsh --profile worker` 就是 Provider 监督的那条命令。
 
 `@deepseek-ai/dsh-instance-gateway` 是 Consumer。它替代单运行时网关提供 `ctx.apiProxy`，因此客户端既有的载体无需改动即可访问多个运行时。承载会话的域路由到拥有该会话的实例；宿主平面由控制平面自己的 `createApiProxy` 组合回答；两条事件流将控制平面自身的流与每个运行中实例的流合并。
 
@@ -36,7 +38,7 @@ worker 绑定由操作系统分配的端口，因此其监督者无法预先知�
 
 寻址到与调用路由目标不同实例的会话 id 会大声失败。放行它会让接收实例对一个确实存在（只是在隔壁运行时）的 id 回答 `session-not-found`——这是可诊断性最差的结果。
 
-`~` 在 URL 中是非保留字符，因此全局 id 能安全通过会话日志下载的查询串。实例 id 不得包含它；本包的 invariant（不变式）伴生插件对照注册表的权威事件流检查这一点，因为违反它会静默地把一个实例的会话路由到另一个实例。
+`~` 在 URL 中是非保留字符，因此全局 id 能安全通过会话日志下载的查询串。实例 id 不得包含它；本包的不变式配套插件对照注册表的权威事件流检查这一点，因为违反它会静默地把一个实例的会话路由到另一个实例。
 
 ### 放置就是会话创建
 
@@ -48,13 +50,13 @@ worker 绑定由操作系统分配的端口，因此其监督者无法预先知�
 
 ### 转发创建请求时丢弃了什么
 
-`workspaceId`、`cwd` 和 `agentPreset` 命名的是控制平面自己的世界：它的 workspace 注册表、它的文件系统，以及 worker bundle 并未挂载的一份 preset（预设）名册。它们被丢弃而非转发，因此会话落在实例自己的 workspace 中、由实例自己的 agent 承载。
+`workspaceId`、`cwd` 和 `agentPreset` 命名的是控制平面自己的世界：它的 workspace 注册表、它的文件系统，以及 worker 组合包并未挂载的一份 agent preset 名册。它们被丢弃而非转发，因此会话落在实例自己的 workspace 中、由实例自己的 agent 承载。
 
 ## Alternatives considered
 
 **每个运行时一条浏览器连接。** 客户端直接对每个实例打开 `/api`，控制平面只负责发放地址。这会完全删除网关，并连带删除 id 命名空间——每条连接本来就限定在一个存储内。它输在客户端：重连、流合并、按实例鉴权和跨实例排序都要进入每一种客户端形态，而且运行时数量会在传输层可见。既定约束是单条连接。
 
-**用 SDK stdio 或 ACP 作为 worker 协议。** 两者都已存在，也都已在子进程中运行 harness。但两者都不承载浏览器客户端所需的域——workspace 注册表、settings（设置）与凭据平面、会话搜索、projection（投影）流——因此网关将不得不做翻译而非路由，且每新增一个 `/api` 方法就要多一层翻译。复用 `/api` 线路意味着任何已经能与 harness 对话的东西都能访问 worker，包括本次工作中用到的 `curl`。
+**用 SDK stdio 或 ACP 作为 worker 协议。** 两者都已存在，也都已在子进程中运行 harness。但两者都不承载浏览器客户端所需的域——workspace 注册表、设置与凭据平面、会话搜索、投影流——因此网关将不得不做翻译而非路由，且每新增一个 `/api` 方法就要多一层翻译。复用 `/api` 线路意味着任何已经能与 harness 对话的东西都能访问 worker，包括本次工作中用到的 `curl`。
 
 **用网关生成的不透明 id 寻址会话。** 网关维护一张从自有 id 到 `(instance, localSessionId)` 的映射，而不是把两者编码进 id。这对客户端隐藏了实例，更整洁，也能在实例 id 变化时存活。它输在这张映射是状态：它必须持久化才能挺过控制平面重启，而丢失它的重启会让每个会话失联。组合式 id 是无状态的——任何持有注册表的进程都能路由。
 
@@ -76,8 +78,8 @@ worker 绑定由操作系统分配的端口，因此其监督者无法预先知�
 
 ## Testing
 
-`packages/instance/instance/tests/registry.spec.ts` 钉住状态机：转换只在提交之后才广播、endpoint（端点）恰好在运行期间发布、并发启动汇入同一次转换、失败的启动在重试时清除、其运行时拒绝停止的 stop 报告 `failed` 而非 `stopped`、被移除的 id 永不复用，以及释放会触及每个存活运行时——包括在拆除开始之后才完成启动的那个。“endpoint 恰好在运行期间发布”这条用例发现了一个真实缺陷：正在停止的实例仍持有运行时句柄以便 stop 能触及它，而它的视图当时正在发布那个已失效的 endpoint。
+`packages/instance/instance/tests/registry.spec.ts` 钉住状态机：转换只在提交之后才广播、endpoint 恰好在运行期间发布、并发启动汇入同一次转换、失败的启动在重试时清除、其运行时拒绝停止的 stop 报告 `failed` 而非 `stopped`、被移除的 id 永不复用，以及释放会触及每个存活运行时——包括在拆除开始之后才完成启动的那个。“endpoint 恰好在运行期间发布”这条用例发现了一个真实缺陷：正在停止的实例仍持有运行时句柄以便 stop 能触及它，而它的视图当时正在发布那个已失效的 endpoint。
 
 `packages/instance/instance-gateway/tests/` 钉住双向 id 改写，以及扇入缓冲区的到达顺序、关闭、中止和清理行为。
 
-`examples/instance-runtimes/` 是组装后的路径。目前还没有 snapshot（快照）覆盖它：snapshot 测试框架回放的是单个运行时的 transcript（记录），而多运行时 transcript 需要框架支持按实例回放。在此之前该示例由人工验证——两个会话落在不同运行时上并具有不同的 `cwd`，合并后的 mux 流承载来自每个运行时（包括在流打开之后才启动的那个）的全局化帧，以及无法路由的会话 id 被拒绝。
+`examples/instance-runtimes/` 是组装后的路径。目前还没有快照覆盖它：快照测试框架回放的是单个运行时的 transcript（文本记录），而多运行时 transcript 需要框架支持按实例回放。在此之前该示例由人工验证——两个会话落在不同运行时上并具有不同的 `cwd`，合并后的 mux 流承载来自每个运行时（包括在流打开之后才启动的那个）的全局化帧，以及无法路由的会话 id 被拒绝。

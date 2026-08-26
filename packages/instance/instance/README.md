@@ -20,19 +20,11 @@ The seam contains no process, container, HTTP, session, or routing policy. Provi
 
 ## Model Experience
 
-### Indirect consumer
-
-#### What the model sees
-
-Nothing directly. This package registers no prompt, tool, or session event. A model running inside an instance sees only its own runtime, which is the point of the seam.
-
-#### Token effect
-
-None directly.
+None, as the seam owns instance identity and lifecycle only; the harness composed inside an instance owns every prompt, tool, and session event a model there sees.
 
 #### KV Cache effect
 
-No direct invalidation.
+None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
