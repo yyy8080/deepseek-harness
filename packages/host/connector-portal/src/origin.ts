@@ -18,8 +18,15 @@
 
 import type { IncomingHttpHeaders } from 'node:http'
 
-/** Read one request header as text, ignoring a repeated header. */
-function single(headers: IncomingHttpHeaders, name: string): string | undefined {
+/**
+ * Read one request header as text, ignoring a repeated header. A header node
+ * hands over as a list was sent more than once, and picking a member would let
+ * the second copy decide what the first one meant.
+ * @param headers - the request headers, verbatim.
+ * @param name - lower-case header name.
+ * @returns the single value, or undefined when the header is absent or repeated.
+ */
+export function singleHeader(headers: IncomingHttpHeaders, name: string): string | undefined {
   const value = headers[name]
   return typeof value === 'string' ? value : undefined
 }
@@ -31,7 +38,7 @@ function single(headers: IncomingHttpHeaders, name: string): string | undefined 
  * module cannot see.
  */
 function forwardedScheme(headers: IncomingHttpHeaders): 'http:' | 'https:' | undefined {
-  const value = single(headers, 'x-forwarded-proto')?.trim().toLowerCase()
+  const value = singleHeader(headers, 'x-forwarded-proto')?.trim().toLowerCase()
   if (value === 'http') return 'http:'
   return value === 'https' ? 'https:' : undefined
 }
@@ -42,7 +49,7 @@ function forwardedScheme(headers: IncomingHttpHeaders): 'http:' | 'https:' | und
  * @returns the origin, or undefined when the Host is absent or not a canonical authority.
  */
 export function requestOrigin(headers: IncomingHttpHeaders): string | undefined {
-  const authority = single(headers, 'host')
+  const authority = singleHeader(headers, 'host')
   if (authority === undefined) return undefined
   const scheme = forwardedScheme(headers) ?? 'http:'
   let url: URL

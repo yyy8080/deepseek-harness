@@ -43,8 +43,8 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
 import { ConnectorEnrollments, enrollmentToken } from './enrollment.ts'
-import type { ConnectorEnrollment } from './enrollment.ts'
-import { requestOrigin } from './origin.ts'
+import type { ConnectorAttachDecision } from './enrollment.ts'
+import { requestOrigin, singleHeader } from './origin.ts'
 import {
   assertPackOrigin,
   packContentType,
@@ -71,7 +71,7 @@ export {
   renderConnectorPack,
 } from './pack.ts'
 export type { ConnectorPackSpec } from './pack.ts'
-export { requestOrigin } from './origin.ts'
+export { requestOrigin, singleHeader } from './origin.ts'
 
 /** Deployment configuration of the connector portal. */
 export interface Config {
@@ -88,10 +88,29 @@ export interface Config {
    * forwards.
    */
   publicOrigin?: string
+  /**
+   * Absolute path of the single-file agent program `<basePath>/agent.mjs`
+   * serves. It defaults to the bundle `@deepseek-ai/dsh-connector-host` ships,
+   * which `pnpm run build` produces; a deployment that publishes its own build
+   * of the agent points this at that file instead.
+   */
+  agentProgramPath?: string
 }
+
+/**
+ * The agent program a build of this workspace ships. `import.meta.resolve` maps
+ * the export without touching the filesystem, so a checkout that has not been
+ * built still loads this module and answers the route with its documented 503.
+ */
+const BUNDLED_AGENT_PROGRAM = fileURLToPath(
+  import.meta.resolve('@deepseek-ai/dsh-connector-host/agent-bundle'),
+)
 
 /** Deadline for the connector handshake once an agent's upgrade is accepted. */
 const ATTACH_HANDSHAKE_TIMEOUT_MS = 10_000
+
+/** The admitted half of an attach decision, which is all adoption ever sees. */
+type AdmittedAttach = Extract<ConnectorAttachDecision, { admitted: true }>
 
 /** Status line and body of each refused attach attempt. */
 const REFUSAL_STATUS = {
@@ -119,16 +138,19 @@ export class ConnectorPortal extends TypertRemoteService {
     packTtlMs: z.natural().default(1_800_000),
     maxConnectors: z.natural().default(8),
     publicOrigin: z.string(),
+    agentProgramPath: z.string().default(BUNDLED_AGENT_PROGRAM),
   })
 
   private readonly enrollments: ConnectorEnrollments
   private readonly basePath: string
   private readonly publicOrigin: string | undefined
+  private readonly agentProgramPath: string
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'connectorPortal')
     this.basePath = normalizeBasePath(config.basePath as string)
     this.publicOrigin = config.publicOrigin === undefined ? undefined : assertPackOrigin(config.publicOrigin)
+    this.agentProgramPath = config.agentProgramPath as string
     this.enrollments = new ConnectorEnrollments(config.packTtlMs as number, config.maxConnectors as number)
 
     ctx.effect(() => ctx.webServer.register({
@@ -194,6 +216,7 @@ export class ConnectorPortal extends TypertRemoteService {
 
   /** Answer one portal request: a pack download, the agent program, or 404. */
   private async serve(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    /* v8 ignore next -- node:http always sets url on server requests */
     const pathname = new URL(req.url ?? '/', 'http://x').pathname
     const suffix = pathname.slice(this.basePath.length)
     if (req.method !== 'GET' && req.method !== 'HEAD') {
@@ -242,9 +265,9 @@ export class ConnectorPortal extends TypertRemoteService {
   private async serveAgent(res: ServerResponse): Promise<void> {
     let body: Buffer
     try {
-      body = await readFile(fileURLToPath(import.meta.resolve('@deepseek-ai/dsh-connector-host/agent-bundle')))
+      body = await readFile(this.agentProgramPath)
     } catch (error: unknown) {
-      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      this.ctx.logger.warn(`connector-portal: agent program ${JSON.stringify(this.agentProgramPath)} is unreadable: ${String(error)}`)
       reply(res, 503, 'text/plain; charset=utf-8', 'the connector agent program is not available in this build')
       return
     }
@@ -254,12 +277,12 @@ export class ConnectorPortal extends TypertRemoteService {
 
   /** Admit or refuse one agent's reversed connection. */
   private accept(req: IncomingMessage, socket: Duplex, head: Buffer): void {
-    const offered = headerValue(req.headers, 'upgrade')
+    const offered = singleHeader(req.headers, 'upgrade')
     if (offered?.toLowerCase() !== CONNECTOR_UPGRADE_PROTOCOL) {
       socket.destroy()
       return
     }
-    const decision = this.enrollments.admitAttach(headerValue(req.headers, CONNECTOR_TOKEN_HEADER) ?? '')
+    const decision = this.enrollments.admitAttach(singleHeader(req.headers, CONNECTOR_TOKEN_HEADER) ?? '')
     if (!decision.admitted) {
       const refusal = REFUSAL_STATUS[decision.refusal]
       socket.end(
@@ -277,11 +300,12 @@ export class ConnectorPortal extends TypertRemoteService {
       + `upgrade: ${CONNECTOR_UPGRADE_PROTOCOL}\r\n\r\n`,
     )
     if (head.length > 0) (socket as unknown as Readable).unshift(head)
-    void this.adopt(decision.enrollment, socket as Socket, headerValue(req.headers, CONNECTOR_LABEL_HEADER))
+    void this.adopt(decision, socket as Socket, singleHeader(req.headers, CONNECTOR_LABEL_HEADER))
   }
 
   /** Complete the connector handshake and register the machine behind it. */
-  private async adopt(enrollment: ConnectorEnrollment, socket: Socket, label: string | undefined): Promise<void> {
+  private async adopt(decision: AdmittedAttach, socket: Socket, label: string | undefined): Promise<void> {
+    const enrollment = decision.enrollment
     await enrollment.attachment?.release()
     let link: ConnectorLink
     try {
@@ -291,13 +315,14 @@ export class ConnectorPortal extends TypertRemoteService {
         handshakeTimeoutMs: ATTACH_HANDSHAKE_TIMEOUT_MS,
       })
     } catch (error: unknown) {
-      this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
+      this.ctx.logger.warn(`connector-portal: enrollment ${JSON.stringify(String(enrollment.id))} failed its handshake: ${String(error)}`)
       socket.destroy()
       return
     }
-    // The enrollment may have been revoked while the handshake ran; its record
-    // is gone from the ledger, so nothing would ever release this registration.
-    if (this.enrollments.get(String(enrollment.id)) === undefined) {
+    // The handshake ran with nothing holding the slot, so the enrollment may
+    // have been revoked or re-dialled meanwhile. Registering anyway would leave
+    // a connector nothing releases, or take the id away from the live agent.
+    if (enrollment.attachGeneration !== decision.generation) {
       await link.close()
       return
     }
@@ -309,7 +334,7 @@ export class ConnectorPortal extends TypertRemoteService {
     const release = async (): Promise<void> => {
       if (released) return
       released = true
-      if (enrollment.attachment?.release === release) delete enrollment.attachment
+      delete enrollment.attachment
       await link.close()
       await unregister()
     }
@@ -340,12 +365,6 @@ declare module '@deepseek-ai/cordis' {
      */
     'connector-portal/attached'(enrollmentId: ConnectorEnrollmentId): void
   }
-}
-
-/** Read one request header as text, ignoring a repeated header. */
-function headerValue(headers: IncomingHttpHeaders, name: string): string | undefined {
-  const value = headers[name]
-  return typeof value === 'string' ? value : undefined
 }
 
 /** Write one short response body. */

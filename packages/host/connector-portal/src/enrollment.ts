@@ -50,6 +50,13 @@ export interface ConnectorEnrollment {
   downloadedAt?: number
   /** The live attachment, while one agent is connected. */
   attachment?: ConnectorAttachment
+  /**
+   * Which admitted attach this record's attachment slot currently belongs to.
+   * It advances whenever an in-flight adoption becomes stale — a later attach
+   * was admitted, or the record was discarded — so an adoption that completes
+   * its handshake late can tell that the slot is no longer its own.
+   */
+  attachGeneration: number
 }
 
 /** Reasons an attach attempt is refused, as the agent's operator sees them. */
@@ -57,7 +64,12 @@ export type ConnectorAttachRefusal = 'unknown-token' | 'capacity'
 
 /** Whether an attach attempt was admitted, and which enrollment it named. */
 export type ConnectorAttachDecision =
-  | { readonly admitted: true; readonly enrollment: ConnectorEnrollment }
+  | {
+    readonly admitted: true
+    readonly enrollment: ConnectorEnrollment
+    /** Generation this attempt owns; it may adopt only while the record still reads the same. */
+    readonly generation: number
+  }
   | { readonly admitted: false; readonly refusal: ConnectorAttachRefusal }
 
 /** Random URL- and shell-safe text with no separator character in it. */
@@ -106,6 +118,7 @@ export class ConnectorEnrollments {
       os,
       issuedAt: now,
       expiresAt: now + this.packTtlMs,
+      attachGeneration: 0,
     }
     this.records.set(String(enrollment.id), enrollment)
     return enrollment
@@ -142,7 +155,8 @@ export class ConnectorEnrollments {
     const others = [...this.records.values()]
       .filter(record => record !== enrollment && record.attachment !== undefined).length
     if (others >= this.maxAttached) return { admitted: false, refusal: 'capacity' }
-    return { admitted: true, enrollment }
+    enrollment.attachGeneration += 1
+    return { admitted: true, enrollment, generation: enrollment.attachGeneration }
   }
 
   /**
@@ -156,13 +170,16 @@ export class ConnectorEnrollments {
 
   /**
    * Forget one enrollment. Its live attachment, when there is one, is the
-   * caller's to release first.
+   * caller's to release first, and an adoption still shaking hands for it is
+   * retired by the generation bump.
    * @param id - the enrollment id.
    * @returns the removed record, or undefined when it was already gone.
    */
   remove(id: string): ConnectorEnrollment | undefined {
     const enrollment = this.records.get(id)
-    if (enrollment !== undefined) this.records.delete(id)
+    if (enrollment === undefined) return undefined
+    this.records.delete(id)
+    enrollment.attachGeneration += 1
     return enrollment
   }
 
