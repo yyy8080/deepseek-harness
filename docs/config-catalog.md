@@ -573,7 +573,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/connector/connector-host/src/index.ts:35`](../packages/connector/connector-host/src/index.ts)
+Source: [`packages/connector/connector-host/src/index.ts:43`](../packages/connector/connector-host/src/index.ts)
 
 <a id="deepseek-aidsh-connector-tcp"></a>
 
@@ -901,6 +901,40 @@ export interface Config {
 ```
 
 Source: [`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+
+<a id="deepseek-aidsh-host-connector-portal"></a>
+
+## `@deepseek-ai/dsh-host-connector-portal`
+
+Requires: `connectors` · `webServer`
+
+```ts config-catalog
+/** Deployment configuration of the connector portal. */
+export interface Config {
+  /** Route prefix every portal path hangs under. */
+  basePath?: string
+  /** How long a freshly issued pack stays downloadable, in milliseconds. */
+  packTtlMs?: number
+  /** How many target machines may be attached at once. */
+  maxConnectors?: number
+  /**
+   * Absolute origin the generated packs dial back to. Leave it unset to derive
+   * the origin from each download request, which is what a deployment behind an
+   * ordinary reverse proxy wants; set it when the proxy rewrites the Host it
+   * forwards.
+   */
+  publicOrigin?: string
+  /**
+   * Absolute path of the single-file agent program `<basePath>/agent.mjs`
+   * serves. It defaults to the bundle `@deepseek-ai/dsh-connector-host` ships,
+   * which `pnpm run build` produces; a deployment that publishes its own build
+   * of the agent points this at that file instead.
+   */
+  agentProgramPath?: string
+}
+```
+
+Source: [`packages/host/connector-portal/src/index.ts:77`](../packages/host/connector-portal/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -3326,6 +3360,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-client-ui-reference` ([`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-renderer` ([`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings` ([`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-settings-connectors` ([`packages/client/ui-settings-connectors/src/index.ts`](../packages/client/ui-settings-connectors/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general` ([`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-models` ([`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory` ([`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts))

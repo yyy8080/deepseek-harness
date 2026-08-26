@@ -361,7 +361,6 @@ declare module '@deepseek-ai/cordis' {
      * after the agent lost and regained its connection.
      * @param enrollmentId - the enrollment whose agent attached.
      * @mode emit
-     * @dshScopeScan unsupported
      */
     'connector-portal/attached'(enrollmentId: ConnectorEnrollmentId): void
   }

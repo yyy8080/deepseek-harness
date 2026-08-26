@@ -620,6 +620,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'connectorPortal',
+    summary: 'The connector portal service (`ctx.connectorPortal`).',
+    description: 'The connector portal service (`ctx.connectorPortal`). It owns the enrollment ledger, the routes that serve packs and accept attachments, and the registrations attached targets hold in `ctx.connectors`.',
+    methods: [
+      {
+        signature: '@Remote(\'issue\') issue(request: ConnectorPackRequest): ConnectorPackTicket',
+        description: 'Mint one enrollment and describe the pack the browser should fetch.',
+        parameters: [{ name: 'request', description: 'the target family the user picked.' }],
+        returns: 'the download path, file name, and download deadline.',
+      },
+      {
+        signature: '@Remote(\'list\') list(): ConnectorPortalSnapshot',
+        description: 'Read the current enrollment ledger.',
+        parameters: [],
+        returns: 'every enrollment this deployment holds, oldest first.',
+      },
+      {
+        signature: '@Remote(\'revoke\') async revoke(request: ConnectorRevokeRequest): Promise<ConnectorRevokeResult>',
+        description: 'Discard one enrollment, disconnecting its agent when one is attached.',
+        parameters: [{ name: 'request', description: 'the enrollment to discard.' }],
+        returns: 'whether the enrollment was still known.',
+      },
+    ],
+  },
+  {
     key: 'connectors',
     summary: 'The connector registry (`ctx.connectors`).',
     description: 'The connector registry (`ctx.connectors`). Transport plugins register the connectors a deployment configured; capability providers resolve the calling session\'s connector and operate through its shared link.',
@@ -2556,6 +2581,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [],
   },
   {
+    name: 'connector-portal/attached',
+    mode: 'emit',
+    signature: '\'connector-portal/attached\'(enrollmentId: ConnectorEnrollmentId): void',
+    summary: 'One enrolled target finished its handshake and is now registered in `ctx.connectors`.',
+    description: 'One enrolled target finished its handshake and is now registered in `ctx.connectors`. Emitted once per attachment, including a re-attach after the agent lost and regained its connection.',
+    parameters: [{ name: 'enrollmentId', description: 'the enrollment whose agent attached.' }],
+  },
+  {
     name: 'connector/link-closed',
     mode: 'emit',
     signature: '\'connector/link-closed\'(descriptor: ConnectorDescriptor): void',
@@ -3192,6 +3225,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectorEditRequest {\n    targetKey: string;\n    displayPath: string;\n    edit: FsEditRequest;\n    expected?: {\n        version: FsVersion;\n    };\n}',
   },
   {
+    name: 'ConnectorEnrollmentId',
+    declaration: 'export type ConnectorEnrollmentId = Branded<\'ConnectorEnrollmentId\'>;',
+  },
+  {
+    name: 'ConnectorEnrollmentStatus',
+    declaration: 'export type ConnectorEnrollmentStatus = \'issued\' | \'downloaded\' | \'attached\' | \'expired\';',
+  },
+  {
+    name: 'ConnectorEnrollmentView',
+    declaration: 'export interface ConnectorEnrollmentView {\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly connectorId: string;\n    readonly os: ConnectorPackOs;\n    readonly status: ConnectorEnrollmentStatus;\n    readonly label: string | null;\n    readonly workdir: string | null;\n    readonly issuedAt: number;\n    readonly expiresAt: number;\n}',
+  },
+  {
     name: 'ConnectorFileOperations',
     declaration: 'export interface ConnectorFileOperations {\n    resolve(path: string, cwd: string | undefined, signal: AbortSignal | undefined): Promise<ConnectorTarget>;\n    stat(targetKey: string, signal: AbortSignal | undefined): Promise<FsInfo | undefined>;\n    lstat(path: string, cwd: string | undefined, signal: AbortSignal | undefined): Promise<FsPathInfo | undefined>;\n    readText(targetKey: string, displayPath: string, signal: AbortSignal | undefined): Promise<string>;\n    readBytesBase64(targetKey: string, displayPath: string, maxBytes: number, signal: AbortSignal | undefined): Promise<string>;\n    listDir(targetKey: string, displayPath: string, signal: AbortSignal | undefined): Promise<FsDirEntry[]>;\n    writeText(request: ConnectorWriteRequest, signal: AbortSignal | undefined): Promise<FsWriteOutcome>;\n    editText(request: ConnectorEditRequest, signal: AbortSignal | undefined): Promise<FsEditOutcome>;\n}',
   },
@@ -3212,6 +3257,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConnectorOs = \'linux\' | \'macos\' | \'windows\';',
   },
   {
+    name: 'ConnectorPackOs',
+    declaration: 'export type ConnectorPackOs = \'linux\' | \'macos\' | \'windows\';',
+  },
+  {
+    name: 'ConnectorPackRequest',
+    declaration: 'export interface ConnectorPackRequest {\n    readonly os: ConnectorPackOs;\n}',
+  },
+  {
+    name: 'ConnectorPackTicket',
+    declaration: 'export interface ConnectorPackTicket {\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly os: ConnectorPackOs;\n    readonly downloadPath: string;\n    readonly fileName: string;\n    readonly installPath: string;\n    readonly expiresAt: number;\n}',
+  },
+  {
+    name: 'ConnectorPortalSnapshot',
+    declaration: 'export interface ConnectorPortalSnapshot {\n    readonly enrollments: readonly ConnectorEnrollmentView[];\n}',
+  },
+  {
     name: 'ConnectorProcessEvents',
     declaration: 'export interface ConnectorProcessEvents {\n    data(stream: \'stdout\' | \'stderr\', base64: string): void;\n    exit(outcome: SubprocessOutcome): void;\n    failed(message: string): void;\n    gone(): void;\n}',
   },
@@ -3226,6 +3287,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConnectorRequest',
     declaration: 'export interface ConnectorRequest {\n    session?: Session;\n}',
+  },
+  {
+    name: 'ConnectorRevokeRequest',
+    declaration: 'export interface ConnectorRevokeRequest {\n    readonly enrollmentId: ConnectorEnrollmentId;\n}',
+  },
+  {
+    name: 'ConnectorRevokeResult',
+    declaration: 'export interface ConnectorRevokeResult {\n    readonly revoked: boolean;\n}',
   },
   {
     name: 'ConnectorSpawnSpec',

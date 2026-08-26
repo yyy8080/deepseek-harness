@@ -155,6 +155,9 @@ flowchart LR
   pkg_connector_host["connector-host"]
   pkg_connector_tcp["connector-tcp"]
   pkg_fs_connector["fs-connector"]
+  pkg_connector_portal["connector-portal"]
+  svc_connectorPortal["ctx.connectorPortal<br/>Connector enrollment and download portal"]
+  pkg_client_ui_settings_connectors["client-ui-settings-connectors"]
   pkg_fs["fs"]
   svc_fs["ctx.fs<br/>Filesystem provider seam"]
   pkg_fs_local["fs-local"]
@@ -229,6 +232,7 @@ flowchart LR
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
   pkg_connector --> svc_connectors
   pkg_connector_host --> svc_connectors
+  pkg_connector_portal --> svc_connectorPortal
   pkg_connector_tcp --> svc_connectors
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
@@ -333,6 +337,7 @@ flowchart LR
   svc_clientModules --> pkg_hmr
   svc_codeRuntime --> pkg_tools
   svc_compaction --> pkg_compaction_basic
+  svc_connectorPortal --> pkg_client_ui_settings_connectors
   svc_connectors --> pkg_fs_connector
   svc_connectors --> pkg_subprocess_connector
   svc_cordisInspect --> pkg_tool_cordis
@@ -483,6 +488,7 @@ flowchart LR
 | `ctx.permissionPresets` | `core` | [`permission-presets`](../packages/interaction/permission-presets) | - | - | - | User-facing preset table (`workspace-write`/`danger-full-access`) bundling the sandbox-mode and approval-policy knobs; a switch writes one `permission/preset` event through to both knob events. |
 | `ctx.codeRuntime` | `seam` | [`code-runtime`](../packages/code-runtime/code-runtime) | `code-runtime-worker` | [`tools`](../packages/core/tools) | - | Runs one model-written program against host-provided async bindings; backends differ by substrate and language (the tool registry consumes it for Code Mode). |
 | `ctx.connectors` | `seam` | [`connector`](../packages/connector/connector) | [`connector-host`](../packages/connector/connector-host), [`connector-tcp`](../packages/connector/connector-tcp) | [`fs-connector`](../packages/connector/fs-connector), [`subprocess-connector`](../packages/connector/subprocess-connector) | - | Registers the machines a deployment can execute on and resolves which one the calling session bound; the two capability providers put ctx.fs and ctx.subprocess on that machine. |
+| `ctx.connectorPortal` | `core` | `connector-portal` | - | [`client-ui-settings-connectors`](../packages/client/ui-settings-connectors) | - | Mints an enrollment, serves the start script and agent bundle it names, and registers the machine that dials the attach upgrade back into ctx.connectors. |
 | `ctx.fs` | `seam` | [`fs`](../packages/fs/fs) | [`fs-local`](../packages/fs/fs-local), [`fs-sandbox`](../packages/fs/fs-sandbox), [`fs-e2b`](../packages/e2b/fs-e2b), [`fs-connector`](../packages/connector/fs-connector) | [`tool-fs`](../packages/fs/tool-fs) | [`fs-observation-policy`](../packages/fs/fs-observation-policy) | tool-fs executes read/write/edit through ctx.fs; fs-sandbox fences mutations by the shared sandbox mode; fs-observation-policy contributes observed-state checks through the fs/* event gate. |
 | `ctx.compaction` | `seam` | [`compaction`](../packages/compaction/compaction) | [`compaction-basic`](../packages/compaction/compaction-basic) | [`compaction-basic`](../packages/compaction/compaction-basic) | - | The basic backend consumes post-step pressure and request-error recovery events; there is no model-facing compact tool. |
 | `ctx.subagents` | `seam` | [`subagent`](../packages/subagent/subagent) | [`subagent-spawn-in-process`](../packages/subagent/subagent-spawn-in-process), [`subagent-fork-in-process`](../packages/subagent/subagent-fork-in-process), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code), [`subagent-dsh-sdk`](../packages/subagent/subagent-dsh-sdk) | [`tool-subagent`](../packages/subagent/tool-subagent), [`tool-subagent-control`](../packages/subagent/tool-subagent-control), [`tool-ralph`](../packages/workflow/tool-ralph) | - | Providers implement transports; the service also owns optional Activation-based continuation orchestration, tool-subagent selects one-shot or continuable delegation, tool-subagent-control delivers follow-ups, and tool-ralph requires one fresh structured-output route. |

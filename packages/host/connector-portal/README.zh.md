@@ -1,0 +1,57 @@
+# @deepseek-ai/dsh-host-connector-portal
+
+[English](README.md) | 中文
+
+连接器的 Web 入口：这些路由把可直接运行的启动脚本交给用户，接受该脚本拉起的 agent，并把它背后的机器注册进 [`ctx.connectors`](../../connector/connector/README.zh.md)。只要部署已经对外提供 HTTP 源，就不再需要别的东西——目标机器无需入站端口、无需隧道、无需 YAML，因为是 agent 主动拨向部署，而不是反过来。
+
+这个包是一个插件而不是三个，因为登记、生成 pack 与接入是同一件事的三个时刻：为下载铸出的密钥就是 agent 出示的密钥，它指向的登记记录就是会话绑定的连接器 id。拆开只会把该密钥摊到多个包的接口上，却换不来各自独立的演进。
+
+## 配置
+
+| 字段 | 含义 |
+|---|---|
+| `basePath` | 绝对路由前缀，不带结尾斜杠。默认 `/connector`。 |
+| `packTtlMs` | 新签发的 pack 可下载多久。默认 30 分钟。 |
+| `maxConnectors` | 同时最多接入多少台目标机器。默认 `8`。 |
+| `publicOrigin` | 生成的 pack 回拨的源。不设置时，每次下载都从自身请求推导，这正是普通反向代理场景所需；当代理改写它转发的 `Host` 时才设置。 |
+| `agentProgramPath` | `<basePath>/agent.mjs` 所提供的单文件 agent 程序的绝对路径。默认指向 [`dsh-connector-host`](../../connector/connector-host/README.zh.md) 随包发布、由 `pnpm run build` 产出的那份 bundle。 |
+
+## 路由与 Remote
+
+| 路径 | 用途 |
+|---|---|
+| `GET <basePath>/pack/<enrollmentId>` | 渲染该登记记录的启动脚本——`dsh-connector.sh` 或 `dsh-connector.ps1`——其中带有本部署的源与登记密钥。 |
+| `GET <basePath>/agent.mjs` | 提供打包好的 agent 程序。它不含密钥，对每台目标都相同，由 pack 负责抓取。构建中没有该 bundle 时返回 `503`。 |
+| `UPGRADE <basePath>/attach` | 通过 `dsh-connector` 升级协议接受 agent 的反向连接。 |
+
+`connectorPortal` Remote 回应 `issue`（铸出一条登记记录并描述其下载）、`list`（设置页渲染的账本）与 `revoke`（丢弃一条登记记录，同时断开其 agent）。浏览器一侧是 [`client-ui-settings-connectors`](../../client/ui-settings-connectors/README.zh.md)。
+
+## 行为
+
+- **两种生命周期** — pack 下载是短命的，因为文件里带着密钥，而遗留在 shell 历史里的过期链接才是现实中的泄漏面。它授权的接入则不是：一台一直在跑的目标机器要能熬过笔记本休眠与网络切换，而不必重新下载。账本用 `issued`、`downloaded`、`attached`、`expired` 四个词描述记录。
+- **接入准入** — token 自带其登记记录名，并携带 24 字节、以常量时间比较的密钥。已接入的登记记录再次拨入时替换自己的连接，而不计入 `maxConnectors`，因为上一条 socket 正是目标机器自己已经放弃的那条。
+- **接管竞争** — 每次准入的接入都持有一个代号。若某次接管在更晚的拨入被准入之后、或在登记记录被吊销之后才完成握手，它会关掉自己的 link 而不占用槽位，因此注册始终属于最新的 agent。
+- **拆卸** — 卸载插件会释放全部接入，包括那些已接入但从未被会话使用、因而注册表根本没有打开过其 link 的目标。
+- **重启** — 记录存放在内存中。harness 重启会丢弃它们，此后每个 agent 的重试循环都会报告接入被拒，直到用户签发新的 pack；这好过让一台目标机器继续默默服务一个已经不知情的部署。
+
+## 威胁模型
+
+持有一份 pack，就等于让掌控该部署的人对运行它的机器拥有完整的读、写与执行权限。由此有两条推论。
+
+- **下载本身就是凭据。** 路径中不可猜测的登记 id 是 `<basePath>/pack/<id>` 唯一的门禁，因此铸出它的 Remote 才是需要鉴权的那个面。发布本入口的部署必须让其浏览器面保持已鉴权状态——本仓库的参考部署用反向代理鉴权挡在全部路径之前——因为任何能调用 `issue` 的人都能登记一台机器。
+- **目标机器信任该部署。** 生成的脚本在自己的文件头里就直说了这一点，用户运行前读到的就是这段话。在 `http:` 之下，token 与每一帧都以明文传输；可达范围超出私有网络的部署应在入口前终结 TLS。
+
+## 模型体验
+
+间接。已接入的目标就是一个普通连接器，因此 [`dsh-connector`](../../connector/connector/README.zh.md) 向系统提示词贡献的目标描述，以及 [`dsh-fs-connector`](../../connector/fs-connector/README.zh.md) 与 [`dsh-subprocess-connector`](../../connector/subprocess-connector/README.zh.md) 渲染的操作，才是模型看到的东西。本包不贡献任何工具或提示词文本。
+
+#### KV 缓存影响
+
+无直接影响；把会话绑定到新接入的目标会改变连接器描述所拥有的那段前缀。
+
+## 已知限制与未尽事项
+
+- **会话绑定不在本入口内** — 页面会给出每台已接入机器的连接器 id，会话则通过挂载连接器版文件系统与子进程 provider 的 agent preset 抵达它。从浏览器为每场对话挑选目标尚未实现。
+- **账本不持久** — 登记记录撑不过 harness 重启，长期驻留的目标机器在重启后需要一份新的 pack。
+- **每个登记记录只有一种 pack** — 脚本按 `linux`、`macos` 或 `windows` 生成；没有签名安装包、没有服务单元、也没有无人值守升级路径。
+- **没有按登记记录划定的范围** — 已接入的目标会把整个工作目录提供给任何绑定到它的会话，本入口不携带更窄的授权。
