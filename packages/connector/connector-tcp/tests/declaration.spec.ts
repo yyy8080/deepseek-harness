@@ -23,6 +23,15 @@ const declaration: ConnectorTcpDeclaration = {
   tokenEnv: 'DSH_LAB_TOKEN',
 }
 
+/** The same target, declared without either secret field. */
+const inline: ConnectorTcpDeclaration = {
+  id: declaration.id,
+  host: declaration.host,
+  port: declaration.port,
+  os: declaration.os,
+  workdir: declaration.workdir,
+}
+
 afterEach(() => { vi.unstubAllEnvs() })
 
 async function mounted(
@@ -41,13 +50,13 @@ describe('token resolution', () => {
   })
 
   it('accepts an inline secret for a deployment that manages the file as one', () => {
-    expect(resolveConnectorToken({ ...declaration, tokenEnv: undefined, token: 'inline' }, {})).toBe('inline')
+    expect(resolveConnectorToken({ ...inline, token: 'inline' }, {})).toBe('inline')
   })
 
   it.each([
     [{ ...declaration, token: 'both' }, 'needs exactly one of token or tokenEnv'],
-    [{ ...declaration, tokenEnv: undefined }, 'needs exactly one of token or tokenEnv'],
-    [{ ...declaration, tokenEnv: undefined, token: '' }, 'has an empty token'],
+    [inline, 'needs exactly one of token or tokenEnv'],
+    [{ ...inline, token: '' }, 'has an empty token'],
   ])('rejects declaration %#', (invalid, detail) => {
     expect(() => resolveConnectorToken(invalid, {})).toThrow(detail)
   })

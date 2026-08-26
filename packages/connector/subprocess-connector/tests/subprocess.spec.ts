@@ -297,7 +297,7 @@ describe('unsupported capabilities', () => {
     const dir = workdir()
     const ctx = await mounted(dir)
 
-    await expect(ctx.subprocess.spawnTerminal({ argv: [process.execPath], cwd: dir, graceMs: 50 }))
+    await expect(ctx.subprocess.spawnTerminal({ argv: [process.execPath], cwd: dir, graceMs: 50, rows: 24, cols: 80 }))
       .rejects.toMatchObject({ code: 'CONNECTOR_UNSUPPORTED' })
   })
 })

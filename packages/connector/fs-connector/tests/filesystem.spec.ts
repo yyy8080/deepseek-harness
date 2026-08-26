@@ -44,6 +44,13 @@ function target(path: string): FsTarget {
   return { targetKey: FsTargetKey(path), displayPath: path }
 }
 
+/** Drain a text stream into the chunks it delivered. */
+async function collect(chunks: AsyncIterable<string>): Promise<string[]> {
+  const collected: string[] = []
+  for await (const chunk of chunks) collected.push(chunk)
+  return collected
+}
+
 describe('target-dialect path computation', () => {
   it.each([
     ['linux', '/srv/work/notes.txt', 'file:///srv/work/notes.txt'],
@@ -102,7 +109,7 @@ describe('forwarding to the bound connector', () => {
 
     const written = await ctx.fs.writeText(notes, 'hello\n', { kind: 'createIfAbsent' })
     await expect(ctx.fs.readText(notes)).resolves.toBe('hello\n')
-    await expect(Array.fromAsync(await ctx.fs.streamText(notes))).resolves.toEqual(['hello\n'])
+    await expect(collect(await ctx.fs.streamText(notes))).resolves.toEqual(['hello\n'])
     await expect(ctx.fs.readBytes(notes, undefined, 64)).resolves.toEqual(new TextEncoder().encode('hello\n'))
     await expect(ctx.fs.stat(notes)).resolves.toMatchObject({ type: 'file' })
     await expect(ctx.fs.lstat('notes.txt', { cwd: dir })).resolves.toMatchObject({ type: 'file' })
@@ -119,7 +126,7 @@ describe('forwarding to the bound connector', () => {
     const ctx = await mounted(dir)
     writeFileSync(join(dir, 'empty.txt'), '')
 
-    await expect(Array.fromAsync(await ctx.fs.streamText(await ctx.fs.resolve('empty.txt')))).resolves.toEqual([])
+    await expect(collect(await ctx.fs.streamText(await ctx.fs.resolve('empty.txt')))).resolves.toEqual([])
   })
 
   it('forwards an unconditional write and edit without a guard', async () => {
