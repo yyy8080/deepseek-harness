@@ -85,6 +85,9 @@ export interface Config {
   requestTimeoutMs?: number
 }
 
+/** {@link Config} after schemastery fills the defaults (every field present). */
+type ResolvedConfig = Required<Config>
+
 export const Config: z<Config> = z.object({
   provider: z.string().required(),
   placement: z.union([z.const('per-conversation'), z.const('shared')] as const).default('per-conversation'),
@@ -157,15 +160,21 @@ export class InstanceGatewayService extends Service implements ApiProxy {
   /** Which instance issued an answerable server-request, so its answer goes back there. */
   private readonly answerable = new Map<RpcId, InstanceId>()
 
+  /** Schemastery filled every default before construction; the cast records that. */
+  private readonly config: ResolvedConfig
+
   /**
    * @param ctx - composed control-plane context.
    * @param config - validated {@link Config}.
    */
-  constructor(ctx: Context, private readonly config: Config) {
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'apiProxy')
+    this.config = config as ResolvedConfig
     this.local = createApiProxy(ctx, {
       defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(),
-      saveDefaultModelSelection: selection => ctx.agentDefaultModel.saveSelection(selection),
+      // No `saveDefaultModelSelection`: only `session.selectModel` saves one,
+      // and every session lives in an instance, so that call never reaches
+      // this composition. The instance saves the default it was told about.
       cwd: process.cwd(),
       // Every path a client sees belongs to an instance, so there is nothing
       // here a native opener could correctly reveal on the operator's desktop.
@@ -254,9 +263,9 @@ export class InstanceGatewayService extends Service implements ApiProxy {
    */
   async placeConversation(conversationKey: string): Promise<InstanceView> {
     const label = this.config.placement === 'shared'
-      ? this.config.sharedLabel ?? 'shared'
+      ? this.config.sharedLabel
       : `conversation-${conversationKey}`
-    const maxInstances = this.config.maxInstances ?? 8
+    const maxInstances = this.config.maxInstances
     const known = this.ctx.instances.list()
     if (!known.some(view => view.label === label) && known.length >= maxInstances) {
       throw new Error(
@@ -274,7 +283,7 @@ export class InstanceGatewayService extends Service implements ApiProxy {
     }
     const cached = this.clients.get(instanceId)
     if (cached !== undefined && cached.origin === view.endpoint.origin) return cached.client
-    const client = new WorkerApiClient(view.endpoint.origin, this.config.requestTimeoutMs ?? 60_000)
+    const client = new WorkerApiClient(view.endpoint.origin, this.config.requestTimeoutMs)
     this.clients.set(instanceId, { origin: view.endpoint.origin, client })
     return client
   }

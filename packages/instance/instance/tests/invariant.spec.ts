@@ -4,11 +4,16 @@ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { InstanceId, type InstanceView } from '@deepseek-ai/dsh-instance'
 import * as InstanceInvariant from '@deepseek-ai/dsh-instance/invariant'
 
-const RUNNING: InstanceView = {
+/** The instance every case varies, minus the endpoint an endpointless case must not carry. */
+const BASE = {
   id: InstanceId('inst-1'),
   label: 'alpha',
   provider: 'scripted',
   desired: 'running',
+} as const satisfies Omit<InstanceView, 'lifecycle'>
+
+const RUNNING: InstanceView = {
+  ...BASE,
   lifecycle: 'running',
   endpoint: { origin: 'http://127.0.0.1:4001', root: '/tmp/inst-1' },
 }
@@ -37,17 +42,14 @@ describe('instance-registry invariants', () => {
     const announce = await setup([RUNNING])
     expect(() => { announce(RUNNING) }).not.toThrow()
     expect(() => {
-      announce({ ...RUNNING, id: InstanceId('inst-2'), lifecycle: 'stopped', endpoint: undefined })
+      announce({ ...BASE, id: InstanceId('inst-2'), lifecycle: 'stopped' })
     }).not.toThrow()
   })
 
-  it.each([
-    [{ ...RUNNING, lifecycle: 'stopped' } as InstanceView, /announced lifecycle stopped with an endpoint/],
-    [{ ...RUNNING, endpoint: undefined } as InstanceView, /announced lifecycle running without an endpoint/],
-    [
-      { ...RUNNING, lifecycle: 'stopping', endpoint: undefined, failure: 'boom' } as InstanceView,
-      /carrying a failure/,
-    ],
+  it.each<[InstanceView, RegExp]>([
+    [{ ...RUNNING, lifecycle: 'stopped' }, /announced lifecycle stopped with an endpoint/],
+    [{ ...BASE, lifecycle: 'running' }, /announced lifecycle running without an endpoint/],
+    [{ ...BASE, lifecycle: 'stopping', failure: 'boom' }, /carrying a failure/],
   ])('rejects an announcement that breaks the endpoint or failure contract', async (view, message) => {
     const announce = await setup()
     expect(() => { announce(view) }).toThrow(message)
@@ -55,7 +57,7 @@ describe('instance-registry invariants', () => {
 
   it('rejects an announcement the registry snapshot contradicts', async () => {
     const announce = await setup([RUNNING])
-    expect(() => { announce({ ...RUNNING, lifecycle: 'stopped', endpoint: undefined }) })
+    expect(() => { announce({ ...BASE, lifecycle: 'stopped' }) })
       .toThrow(/announced stopped while the registry holds running/)
   })
 

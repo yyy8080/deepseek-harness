@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { INSTANCE_ENDPOINT_FILE_ENV, InstanceId, type InstanceStartRequest } from '@deepseek-ai/dsh-instance'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import * as LocalProcessProvider from '@deepseek-ai/dsh-instance-local-process'
-import { createLocalProcessProvider, PROVIDER_NAME, type Config } from '@deepseek-ai/dsh-instance-local-process'
+import { Config, createLocalProcessProvider, PROVIDER_NAME } from '@deepseek-ai/dsh-instance-local-process'
 
 /** One spawn the fake seam recorded, plus the levers a test drives it with. */
 interface FakeWorker {
@@ -23,11 +23,20 @@ interface FakeWorker {
  */
 class FakeSubprocess {
   readonly workers: FakeWorker[] = []
+  /**
+   * Whether a worker's `done` resolves rather than rejects. A spawn-level
+   * failure rejects it; an ordinary exit resolves — the provider observes
+   * both the same way.
+   */
+  exitCleanly = false
 
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     let exit = (): void => {}
-    const done = new Promise<never>((_resolve, reject) => {
-      exit = () => { reject(new Error('worker exited')) }
+    const done = new Promise<never>((resolve, reject) => {
+      exit = () => {
+        if (this.exitCleanly) resolve(undefined as never)
+        else reject(new Error('worker exited'))
+      }
     })
     // The provider only ever observes settlement, and an unobserved rejection
     // before that would fail the run.
@@ -41,8 +50,8 @@ class FakeSubprocess {
         stdin: undefined,
         stdout: undefined,
         stderr: undefined,
-        collected: {} as SubprocessHandle['collected'],
-        done: done as unknown as SubprocessHandle['done'],
+        collected: {},
+        done: done,
         terminate: () => { worker.terminated = true },
         waitForExit: () => Promise.resolve(true),
       },
@@ -91,8 +100,9 @@ async function spawned(index: number): Promise<SubprocessSpawnSpec> {
   }
 }
 
+/** Validate through the plugin schema, because the provider reads filled defaults. */
 function config(overrides: Partial<Config> = {}): Config {
-  return { command: 'dsh', args: ['--profile', 'worker'], root, readyTimeoutMs: 2_000, ...overrides }
+  return Config({ command: 'dsh', args: ['--profile', 'worker'], root, readyTimeoutMs: 2_000, ...overrides })
 }
 
 describe('local-process instance provider', () => {
@@ -143,7 +153,7 @@ describe('local-process instance provider', () => {
   })
 
   it('starts each worker from the seam-scrubbed base when nothing is configured', async () => {
-    const provider = createLocalProcessProvider(ctx, { command: 'dsh', args: [], root })
+    const provider = createLocalProcessProvider(ctx, Config({ command: 'dsh', root }))
     void provider.start(request()).catch(() => {})
     const spec = await spawned(0)
 
@@ -173,6 +183,16 @@ describe('local-process instance provider', () => {
 
     await expect(starting).rejects.toThrow(/exited before publishing its endpoint/)
     expect(subprocess.workers[0]?.terminated).toBe(true)
+  })
+
+  it('treats an ordinary early exit the same as a spawn failure', async () => {
+    subprocess.exitCleanly = true
+    const provider = createLocalProcessProvider(ctx, config())
+    const starting = provider.start(request())
+    await spawned(0)
+    subprocess.workers[0]?.exit()
+
+    await expect(starting).rejects.toThrow(/exited before publishing its endpoint/)
   })
 
   it('fails the start when the caller cancels it', async () => {

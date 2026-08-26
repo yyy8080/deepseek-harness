@@ -53,8 +53,9 @@ export interface Config {
    * Arguments handed to {@link command}. They must boot a harness profile
    * that serves `/api` on loopback and performs the endpoint handshake;
    * `@deepseek-ai/dsh-worker` is the bundle that does.
+   * @default []
    */
-  args: string[]
+  args?: string[]
   /**
    * Absolute directory under which each instance's private tree is created
    * (`<root>/<instanceId>/home` and `<root>/<instanceId>/workspace`). A
@@ -85,6 +86,9 @@ export interface Config {
    */
   removeStateOnStop?: boolean
 }
+
+/** {@link Config} after schemastery fills the defaults (every field present). */
+type ResolvedConfig = Required<Config>
 
 export const Config: z<Config> = z.object({
   command: z.string().required(),
@@ -145,15 +149,15 @@ async function readHandshake(path: string): Promise<string | undefined> {
 }
 
 /** Resolve the environment one worker starts with (explicit entries only; the seam scrubs the rest). */
-function workerEnv(config: Config, layout: InstanceLayout): Record<string, string> {
+function workerEnv(config: ResolvedConfig, layout: InstanceLayout): Record<string, string> {
   const forwarded: Record<string, string> = {}
-  for (const key of config.forwardEnv ?? []) {
+  for (const key of config.forwardEnv) {
     const value = process.env[key]
     if (value !== undefined) forwarded[key] = value
   }
   return {
     ...forwarded,
-    ...config.env ?? {},
+    ...config.env,
     DSH_HOME: layout.home,
     [INSTANCE_ENDPOINT_FILE_ENV]: layout.endpointFile,
   }
@@ -194,9 +198,9 @@ async function awaitHandshake(
  * @returns the provider implementation registered with the instance registry.
  */
 export function createLocalProcessProvider(ctx: Context, config: Config): InstanceProvider {
-  const root = resolve(config.root)
-  const stopGraceMs = config.stopGraceMs ?? 5_000
-  const readyTimeoutMs = config.readyTimeoutMs ?? 60_000
+  // Schemastery filled every default before this call; the cast records that.
+  const resolved = config as ResolvedConfig
+  const root = resolve(resolved.root)
   return {
     name: PROVIDER_NAME,
     async start(request: InstanceStartRequest): Promise<InstanceRuntime> {
@@ -207,22 +211,22 @@ export function createLocalProcessProvider(ctx: Context, config: Config): Instan
       await mkdir(layout.home, { recursive: true, mode: PRIVATE_DIR_MODE })
       await mkdir(layout.workspace, { recursive: true, mode: PRIVATE_DIR_MODE })
       const handle = ctx.subprocess.spawn({
-        argv: [config.command, ...config.args],
+        argv: [resolved.command, ...resolved.args],
         cwd: layout.workspace,
         // A worker's diagnostics are the only place a boot failure is
         // legible; inheriting puts them on the control plane's own streams
         // rather than in a buffer nothing reads.
         stdio: { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' },
-        graceMs: stopGraceMs,
-        env: workerEnv(config, layout),
+        graceMs: resolved.stopGraceMs,
+        env: workerEnv(resolved, layout),
       })
       const stop = async (): Promise<void> => {
         handle.terminate()
         await handle.waitForExit()
-        if (config.removeStateOnStop === true) await rm(layout.root, { recursive: true, force: true })
+        if (resolved.removeStateOnStop) await rm(layout.root, { recursive: true, force: true })
       }
       try {
-        const endpoint = await awaitHandshake(layout, handle, request, readyTimeoutMs)
+        const endpoint = await awaitHandshake(layout, handle, request, resolved.readyTimeoutMs)
         return { endpoint, stop }
       } catch (error) {
         // The registry never sees this handle, so this call is the only one

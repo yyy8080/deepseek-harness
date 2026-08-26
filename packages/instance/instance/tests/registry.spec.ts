@@ -34,7 +34,7 @@ class ScriptedProvider implements InstanceProvider {
   async start(request: InstanceStartRequest): Promise<InstanceRuntime> {
     this.starts.push(request)
     if (this.gate !== undefined) await this.gate
-    // eslint-disable-next-line @typescript-eslint/only-throw-error -- a foreign provider is not bound by this repository's throw discipline
+    // A foreign provider is not bound by this repository's throw discipline.
     if (this.throwNonError) throw 'spawn refused'
     const failure = this.failNextStart
     if (failure !== undefined) {
