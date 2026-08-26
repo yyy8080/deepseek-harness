@@ -123,6 +123,7 @@
         "./packages/plan/*/src/invariant.ts",
         "./packages/preset/*/src/invariant.ts",
         "./packages/subagent/*/src/invariant.ts",
+        "./packages/instance/*/src/invariant.ts",
         "./packages/jobs/*/src/invariant.ts",
         "./packages/experimental/*/src/invariant.ts",
         "./packages/workflow/*/src/invariant.ts",

@@ -44,7 +44,12 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-agent-default-model": "workspace:^",
-    "@deepseek-ai/dsh-invariants": "workspace:^"
+    "@deepseek-ai/dsh-invariants": "workspace:^",
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-user-questions": "workspace:^",
+    "@types/ws": "^8.18.1",
+    "ws": "^8.21.0"
   }
 }

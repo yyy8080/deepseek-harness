@@ -374,8 +374,10 @@ export class InstanceRegistry extends Service {
    */
   private async stopQuietly(id: InstanceId): Promise<void> {
     const view = await this.stop(id)
-    if (view.lifecycle === 'failed') {
-      this.ctx.logger.warn(`instance ${view.label} did not stop cleanly: ${view.failure ?? 'unknown failure'}`)
+    // A failure is published exactly while the lifecycle is `failed`, so its
+    // presence is the same test as the lifecycle and carries the reason.
+    if (view.failure !== undefined) {
+      this.ctx.logger.warn(`instance ${view.label} did not stop cleanly: ${view.failure}`)
     }
   }
 }

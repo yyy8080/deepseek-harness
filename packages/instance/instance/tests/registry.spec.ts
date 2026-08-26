@@ -19,12 +19,23 @@ class ScriptedProvider implements InstanceProvider {
   failStop: string | undefined
   /** Resolves the pending start when set; a start awaits it before answering. */
   gate: Promise<void> | undefined
+  /** Throw a non-Error value from the next start, as a foreign backend may. */
+  throwNonError = false
+  /** Holds every stop open until resolved, so a teardown can be observed mid-flight. */
+  stopGate: Promise<void> | undefined
+  /** Settles the first time a stop is entered. */
+  readonly stopEntered: Promise<void>
+  private enterStop = (): void => {}
 
-  constructor(readonly name = 'scripted') {}
+  constructor(readonly name = 'scripted') {
+    this.stopEntered = new Promise<void>((resolve) => { this.enterStop = resolve })
+  }
 
   async start(request: InstanceStartRequest): Promise<InstanceRuntime> {
     this.starts.push(request)
     if (this.gate !== undefined) await this.gate
+    // eslint-disable-next-line @typescript-eslint/only-throw-error -- a foreign provider is not bound by this repository's throw discipline
+    if (this.throwNonError) throw 'spawn refused'
     const failure = this.failNextStart
     if (failure !== undefined) {
       this.failNextStart = undefined
@@ -33,6 +44,8 @@ class ScriptedProvider implements InstanceProvider {
     return {
       endpoint: { origin: `http://127.0.0.1:${String(4000 + this.starts.length)}`, root: `/tmp/${request.id}` },
       stop: async () => {
+        this.enterStop()
+        if (this.stopGate !== undefined) await this.stopGate
         if (this.failStop !== undefined) throw new Error(this.failStop)
         this.stopped.push(request.id)
       },
@@ -135,6 +148,25 @@ describe('InstanceRegistry lifecycle', () => {
     expect(retried.failure).toBeUndefined()
   })
 
+  it('records a non-Error rejection verbatim', async () => {
+    const { registry } = await scaffold()
+    const provider = new ScriptedProvider()
+    registry.registerProvider(provider)
+    provider.throwNonError = true
+    const created = registry.create({ provider: 'scripted', label: 'alpha' })
+
+    expect(await registry.start(created.id)).toMatchObject({ lifecycle: 'failed', failure: 'spawn refused' })
+  })
+
+  it('fails a start whose provider was unregistered after creation', async () => {
+    const { registry } = await scaffold()
+    const remove = registry.registerProvider(new ScriptedProvider())
+    const created = registry.create({ provider: 'scripted', label: 'alpha' })
+    remove()
+
+    await expect(registry.start(created.id)).rejects.toThrow(expect.objectContaining({ code: 'NO_PROVIDER' }))
+  })
+
   it('reports failed rather than stopped when a runtime refuses to stop', async () => {
     const { registry } = await scaffold()
     const provider = new ScriptedProvider()
@@ -186,6 +218,22 @@ describe('InstanceRegistry placement', () => {
     expect(registry.list()).toHaveLength(1)
   })
 
+  it('fails loud when a concurrent stop wins the transition', async () => {
+    const { registry } = await scaffold()
+    const provider = new ScriptedProvider()
+    registry.registerProvider(provider)
+    const created = await registry.ensureRunning({ provider: 'scripted', label: 'alpha' })
+    let release = (): void => {}
+    provider.stopGate = new Promise<void>((resolve) => { release = resolve })
+
+    const stopping = registry.stop(created.id)
+    const placing = registry.ensureRunning({ provider: 'scripted', label: 'alpha' })
+    release()
+    await stopping
+
+    await expect(placing).rejects.toThrow(/did not reach running: stopped/)
+  })
+
   it('fails loud when the runtime never reaches running', async () => {
     const { registry } = await scaffold()
     const provider = new ScriptedProvider()
@@ -221,6 +269,25 @@ describe('InstanceRegistry disposal', () => {
     await dispose()
 
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not stop cleanly'))
+  })
+
+  it('refuses to create or start anything once disposal has begun', async () => {
+    const { registry, dispose } = await scaffold()
+    const provider = new ScriptedProvider()
+    registry.registerProvider(provider)
+    const created = await registry.ensureRunning({ provider: 'scripted', label: 'alpha' })
+    let release = (): void => {}
+    provider.stopGate = new Promise<void>((resolve) => { release = resolve })
+
+    const disposing = dispose()
+    await provider.stopEntered
+
+    expect(() => registry.create({ provider: 'scripted', label: 'beta' }))
+      .toThrow(expect.objectContaining({ code: 'REGISTRY_DISPOSING' }))
+    await expect(registry.start(created.id)).rejects.toThrow(expect.objectContaining({ code: 'REGISTRY_DISPOSING' }))
+
+    release()
+    await disposing
   })
 
   it('releases a runtime that finishes starting after disposal began', async () => {

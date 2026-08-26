@@ -5331,12 +5331,27 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
       '@deepseek-ai/dsh-agent-default-model':
         specifier: workspace:^
         version: link:../../core/agent-default-model
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-user-questions':
+        specifier: workspace:^
+        version: link:../../interaction/user-questions
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
 
   packages/instance/instance-local-process:
     dependencies:
