@@ -7,6 +7,41 @@
       "source": "packages/util/brand/src/index.ts"
     },
     {
+      "doc": "docs/subsystems/marketplace.md",
+      "symbol": "PluginManifest",
+      "source": "packages/marketplace/plugin-manifest/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/marketplace.md",
+      "symbol": "PluginSection",
+      "source": "packages/marketplace/plugin-manifest/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/marketplace.md",
+      "symbol": "PluginCapabilities",
+      "source": "packages/marketplace/plugin-manifest/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/marketplace.md",
+      "symbol": "PluginListing",
+      "source": "packages/marketplace/plugin-registry/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/marketplace.md",
+      "symbol": "PluginRelease",
+      "source": "packages/marketplace/plugin-registry/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/marketplace.md",
+      "symbol": "PluginCatalogProvider",
+      "source": "packages/marketplace/plugin-registry/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/marketplace.md",
+      "symbol": "PluginProvenance",
+      "source": "packages/marketplace/plugin-install/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/connector.md",
       "symbol": "ConnectorDescriptor",
       "source": "packages/connector/connector/src/types.ts"

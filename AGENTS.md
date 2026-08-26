@@ -27,6 +27,7 @@ packages/    @deepseek-ai/dsh-<pkg> workspaces at packages/<group>/<pkg>/
   context/     request-context plugins
   subagent/    subagent capability: Service Definition + providers + delegation Consumers
   bundle/      installable dsh --profile patch-layer bundles
+  marketplace/ plugin catalog seam, static index provider, profile install with provenance
   workflow/    workflow capability + worker-thread provider + tool Consumer
   todo/        todo_write tool
   plan/        plan mode as logged state

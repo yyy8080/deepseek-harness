@@ -1189,6 +1189,52 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'pluginRegistry',
+    summary: 'The marketplace catalog service.',
+    description: 'The marketplace catalog service. Registered as `ctx.pluginRegistry` (one instance per context).\n\nEvery read resolves the catalog at call time: providers own their own caching, so the seam holds no second copy that could disagree with a source a person just edited.',
+    methods: [
+      {
+        signature: 'registerProvider(provider: PluginCatalogProvider): () => void',
+        description: 'Register a catalog provider. Returns a disposer; disposed with the calling fiber.',
+        parameters: [{ name: 'provider', description: 'the provider; its `id` is the registry key.' }],
+        returns: 'the disposer that unregisters the provider.',
+        throws: ['PluginRegistryError `PLUGIN_REGISTRY_DUPLICATE_PROVIDER` when the id is taken.'],
+      },
+      {
+        signature: 'async catalog(signal?: AbortSignal): Promise<ReadonlyMap<PluginId, PluginListing>>',
+        description: 'Read every registered provider\'s catalog and merge it into one id-keyed index.',
+        parameters: [{ name: 'signal', description: 'optional cancellation signal forwarded to every provider.' }],
+        returns: 'the merged catalog, keyed by plugin id.',
+        throws: ['PluginRegistryError `PLUGIN_REGISTRY_UNAVAILABLE` when no provider is registered, `PLUGIN_REGISTRY_DUPLICATE_LISTING` when two providers list one plugin, or `PLUGIN_REGISTRY_EMPTY_RELEASES` for a listing with no release.'],
+      },
+      {
+        signature: 'async search(query: PluginSearchQuery = {}, signal?: AbortSignal): Promise<readonly PluginListing[]>',
+        description: 'Find listings matching a query, ordered by package name so the same query returns the same order across runs.',
+        parameters: [{ name: 'query', description: 'the substring and result bound; both optional.' }, { name: 'signal', description: 'optional cancellation signal forwarded to every provider.' }],
+        returns: 'the matching listings, capped to `query.limit`.',
+      },
+      {
+        signature: 'async get(id: PluginId, signal?: AbortSignal): Promise<PluginListing | undefined>',
+        description: 'Look one plugin up by package name.',
+        parameters: [{ name: 'id', description: 'the plugin\'s package name.' }, { name: 'signal', description: 'optional cancellation signal forwarded to every provider.' }],
+        returns: 'the listing, or `undefined` when no catalog lists it.',
+      },
+      {
+        signature: 'async versions(id: PluginId, signal?: AbortSignal): Promise<readonly PluginRelease[]>',
+        description: 'List one plugin\'s published releases, newest first.',
+        parameters: [{ name: 'id', description: 'the plugin\'s package name.' }, { name: 'signal', description: 'optional cancellation signal forwarded to every provider.' }],
+        returns: 'the releases, newest first.',
+        throws: ['PluginRegistryError `PLUGIN_REGISTRY_UNKNOWN_PLUGIN` when no catalog lists the id.'],
+      },
+      {
+        signature: 'async updates( installed: readonly InstalledPluginVersion[], signal?: AbortSignal, ): Promise<readonly PluginUpdate[]>',
+        description: 'Report which installed plugins the catalog publishes a different newest release for. An installed plugin no catalog lists is skipped: it may have been installed from a tarball by hand, which is not an error.',
+        parameters: [{ name: 'installed', description: 'the profile\'s installed plugins and their versions.' }, { name: 'signal', description: 'optional cancellation signal forwarded to every provider.' }],
+        returns: 'one entry per installed plugin whose version is not the newest release.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -3616,6 +3662,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
   },
   {
+    name: 'InstalledPluginVersion',
+    declaration: 'export interface InstalledPluginVersion {\n    readonly id: PluginId;\n    readonly version: string;\n}',
+  },
+  {
     name: 'InvariantFailure',
     declaration: 'export type InvariantFailure = (message: string) => never;',
   },
@@ -3934,6 +3984,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PluginAccessLevel',
+    declaration: 'export type PluginAccessLevel = \'none\' | \'read\' | \'write\';',
+  },
+  {
+    name: 'PluginCapabilities',
+    declaration: 'export interface PluginCapabilities {\n    readonly tools: readonly string[];\n    readonly filesystem: PluginAccessLevel;\n    readonly network: PluginAccessLevel;\n    readonly subprocess: boolean;\n}',
+  },
+  {
+    name: 'PluginCatalogProvider',
+    declaration: 'export interface PluginCatalogProvider {\n    readonly id: string;\n    catalog(signal?: AbortSignal): Promise<readonly PluginListing[]>;\n}',
+  },
+  {
+    name: 'PluginId',
+    declaration: 'export type PluginId = Branded<\'PluginId\'>;',
+  },
+  {
+    name: 'PluginListing',
+    declaration: 'export interface PluginListing {\n    readonly manifest: PluginManifest;\n    readonly releases: readonly PluginRelease[];\n}',
+  },
+  {
+    name: 'PluginManifest',
+    declaration: 'export interface PluginManifest extends PluginSection {\n    readonly id: PluginId;\n}',
+  },
+  {
+    name: 'PluginRelease',
+    declaration: 'export interface PluginRelease {\n    readonly version: string;\n    readonly tarball: string;\n    readonly publishedAt?: string;\n}',
+  },
+  {
+    name: 'PluginSearchQuery',
+    declaration: 'export interface PluginSearchQuery {\n    readonly text?: string;\n    readonly limit?: number;\n}',
+  },
+  {
+    name: 'PluginSection',
+    declaration: 'export interface PluginSection {\n    readonly displayName: string;\n    readonly description: string;\n    readonly publisher: string;\n    readonly capabilities: PluginCapabilities;\n    readonly homepage?: string;\n}',
+  },
+  {
+    name: 'PluginUpdate',
+    declaration: 'export interface PluginUpdate {\n    readonly id: PluginId;\n    readonly installed: string;\n    readonly latest: PluginRelease;\n}',
   },
   {
     name: 'PostToolDecision',

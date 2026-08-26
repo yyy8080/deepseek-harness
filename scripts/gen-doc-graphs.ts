@@ -84,6 +84,7 @@ const GROUP_ORDER = [
   'spill',
   'todo',
   'plan',
+  'marketplace',
   'cordis',
   'hooks',
   'session-persistence',
@@ -302,6 +303,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Plan collaboration state',
     mode: 'core',
     note: 'Folds logged plan/mode state, flushes user selections at turn boundaries, renders deployment-owned guidance, registers /plan, and keeps the plan-exit schema stable across transitions.',
+  },
+  {
+    key: 'pluginRegistry',
+    pkg: 'plugin-registry',
+    title: 'Plugin catalog seam',
+    mode: 'seam',
+    implementations: ['plugin-registry-static'],
+    consumers: ['dsh'],
+    note: 'Merges every registered catalog provider into one id-keyed index and owns search, version selection, and update detection; dsh marketplace installs a resolved release through dsh-plugin-install.',
   },
   {
     key: 'agentPresets',

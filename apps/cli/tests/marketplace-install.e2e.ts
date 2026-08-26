@@ -2,7 +2,7 @@ import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { execa, type Result } from 'execa'
+import { execa } from 'execa'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
@@ -25,18 +25,25 @@ const PROFILE = 'marketplace-e2e'
 let home: string
 let catalog: string
 
+/** One completed `dsh` run: exit code plus captured streams. */
+interface Run {
+  exitCode: number | undefined
+  stdout: string
+  stderr: string
+}
+
 /** Run one `dsh` invocation from source against the fixture Harness home. */
-async function dsh(...args: readonly string[]): Promise<Result> {
-  return execa(process.execPath, ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', ...args], {
-    cwd: repoRoot,
-    env: { DSH_HOME: home },
-    timeout: 120_000,
-    reject: false,
-  })
+async function dsh(...args: readonly string[]): Promise<Run> {
+  const { exitCode, stdout, stderr } = await execa(
+    process.execPath,
+    ['--import', 'tsx/esm', 'apps/cli/src/bin.ts', ...args],
+    { cwd: repoRoot, env: { DSH_HOME: home }, timeout: 120_000, reject: false },
+  )
+  return { exitCode, stdout, stderr }
 }
 
 /** Run one `dsh marketplace` verb against the fixture catalog. */
-async function marketplace(...args: readonly string[]): Promise<Result> {
+async function marketplace(...args: readonly string[]): Promise<Run> {
   return dsh('marketplace', '--profile', PROFILE, '--index', join(catalog, 'index.json'), ...args)
 }
 
