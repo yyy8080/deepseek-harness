@@ -132,7 +132,7 @@ export async function runConnectorAttachment(
     try {
       attempt = await attachOnce(options, signal)
     } catch (error: unknown) {
-      attempt = { outcome: 'refused', reason: error instanceof Error ? error.message : String(error) }
+      attempt = { outcome: 'refused', reason: String(error) }
     }
     if (attempt.outcome === 'served') {
       options.report(`dsh-connector-agent attached to ${options.url} as ${JSON.stringify(options.label)}`)

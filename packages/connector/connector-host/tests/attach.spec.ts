@@ -148,6 +148,26 @@ describe('keeping one machine attached', () => {
     ])
   })
 
+  it('cancels a dial the deployment never answers', async () => {
+    const dialled = new Promise<void>((resolve) => { server.on('request', () => { resolve() }) })
+    const lines: string[] = []
+    const stop = new AbortController()
+    const running = runConnectorAttachment({
+      url: `${origin}/attach`,
+      token: 'secret',
+      label: 'probe',
+      link,
+      retryDelayMs: RETRY_DELAY_MS,
+      report: (message) => { lines.push(message) },
+    }, stop.signal)
+
+    await dialled
+    stop.abort()
+    await running
+
+    expect(lines).toEqual([`dsh-connector-agent could not attach to ${origin}/attach (Error: attach cancelled)`])
+  })
+
   it('stops dialling as soon as it is asked to', async () => {
     const stop = new AbortController()
     stop.abort()
