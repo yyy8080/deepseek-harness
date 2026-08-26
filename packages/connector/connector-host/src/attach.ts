@@ -115,6 +115,17 @@ async function attachOnce(options: ConnectorAttachOptions, signal: AbortSignal):
 }
 
 /**
+ * Whether the caller has stopped the loop. Reading the flag through a call
+ * keeps every check current: the loop awaits between them, and narrowing from
+ * an earlier read would answer for a signal that has since aborted.
+ * @param signal - the caller's stop signal.
+ * @returns whether it has been aborted.
+ */
+function stopped(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
+/**
  * Keep one machine attached to a deployment until the caller stops it. Every
  * lost or refused connection is retried: a target left running through a
  * harness restart, a laptop resuming from sleep, and a deployment that is not
@@ -127,7 +138,7 @@ export async function runConnectorAttachment(
   options: ConnectorAttachOptions,
   signal: AbortSignal,
 ): Promise<void> {
-  while (!signal.aborted) {
+  while (!stopped(signal)) {
     let attempt: AttachAttempt
     try {
       attempt = await attachOnce(options, signal)
@@ -137,7 +148,7 @@ export async function runConnectorAttachment(
     if (attempt.outcome === 'served') {
       options.report(`dsh-connector-agent attached to ${options.url} as ${JSON.stringify(options.label)}`)
       await attempt.closed
-      if (signal.aborted) return
+      if (stopped(signal)) return
       options.report('dsh-connector-agent lost its attachment')
     } else {
       options.report(`dsh-connector-agent could not attach to ${options.url} (${attempt.reason})`)

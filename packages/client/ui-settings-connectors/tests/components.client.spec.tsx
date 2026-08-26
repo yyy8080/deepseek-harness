@@ -27,6 +27,11 @@ const TICKET = {
 
 type Enrollment = Awaited<ReturnType<ConnectorsSectionInjected['list']>>['enrollments'][number]
 
+/** Spell one branded enrollment id, which only the host ever mints for real. */
+function id(value: string): Enrollment['enrollmentId'] {
+  return value as unknown as Enrollment['enrollmentId']
+}
+
 function machine(overrides: Partial<Enrollment> = {}): Enrollment {
   return {
     enrollmentId: 'enrol-1',
@@ -139,7 +144,7 @@ describe('the Connectors page', () => {
   it('names an attached machine, its connector id, and its working directory', async () => {
     mount({
       list: vi.fn<ConnectorsSectionInjected['list']>()
-        .mockResolvedValue({ enrollments: [machine(), machine({ enrollmentId: 'enrol-2', status: 'issued', label: null })] }),
+        .mockResolvedValue({ enrollments: [machine(), machine({ enrollmentId: id('enrol-2'), status: 'issued', label: null })] }),
     })
 
     await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
