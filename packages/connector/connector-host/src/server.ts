@@ -15,6 +15,7 @@ import { Buffer } from 'node:buffer'
 import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
+import { StringDecoder } from 'node:string_decoder'
 import { ConnectorError } from '@deepseek-ai/dsh-connector'
 import type {
   ConnectorEditRequest,
@@ -312,9 +313,13 @@ class ConnectorSession {
  * @returns a disposer that drops the socket and releases its processes.
  */
 export function serveConnectorSocket(socket: Socket, link: ConnectorLink, token: string): () => void {
-  socket.setEncoding('utf8')
+  // Decoding here rather than through `socket.setEncoding` so both socket
+  // origins are served identically: node refuses an encoding change on a
+  // socket upgraded out of an HTTP request (ERR_HTTP_SOCKET_ENCODING, RFC 7230
+  // §3). StringDecoder keeps the multi-byte-safe boundary handling.
+  const text = new StringDecoder('utf8')
   const session = new ConnectorSession(socket, link, token)
-  socket.on('data', (chunk: string) => { session.receive(chunk) })
+  socket.on('data', (chunk: Buffer) => { session.receive(text.write(chunk)) })
   socket.on('error', () => { socket.destroy() })
   socket.on('close', () => { session.release() })
   return () => {

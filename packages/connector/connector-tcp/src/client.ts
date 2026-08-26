@@ -5,8 +5,10 @@
  * @module @deepseek-ai/dsh-connector-tcp/client
  */
 
+import type { Buffer } from 'node:buffer'
 import { connect } from 'node:net'
 import type { Socket } from 'node:net'
+import { StringDecoder } from 'node:string_decoder'
 import { ConnectorError, ConnectorId } from '@deepseek-ai/dsh-connector'
 import type {
   ConnectorDescriptor,
@@ -77,8 +79,13 @@ class ConnectorTcpTransport {
   private failure: Error | undefined
 
   constructor(private readonly socket: Socket, private readonly id: string) {
-    socket.setEncoding('utf8')
-    socket.on('data', (chunk: string) => { this.receive(chunk) })
+    // Decoding here rather than through `socket.setEncoding` because node
+    // forbids changing the encoding of a socket upgraded out of an HTTP
+    // request (ERR_HTTP_SOCKET_ENCODING, RFC 7230 §3), which is exactly the
+    // socket a reversed connector connection arrives on. StringDecoder keeps
+    // the multi-byte-safe boundary handling setEncoding would have provided.
+    const text = new StringDecoder('utf8')
+    socket.on('data', (chunk: Buffer) => { this.receive(text.write(chunk)) })
     socket.on('error', (error: Error) => { this.fail(this.transportFailure(error)) })
     socket.on('close', () => {
       this.fail(new ConnectorError(`connector ${JSON.stringify(this.id)} closed the connection`, 'CONNECTOR_UNAVAILABLE'))
