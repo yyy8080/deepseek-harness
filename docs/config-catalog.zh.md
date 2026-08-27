@@ -3446,6 +3446,7 @@ export interface Config {
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
 - `@deepseek-ai/dsh-plugin-install`（[`packages/marketplace/plugin-install/src/index.ts`](../packages/marketplace/plugin-install/src/index.ts)）
 - `@deepseek-ai/dsh-plugin-manifest`（[`packages/marketplace/plugin-manifest/src/index.ts`](../packages/marketplace/plugin-manifest/src/index.ts)）
+- `@deepseek-ai/dsh-random-uuid`（[`packages/util/random-uuid/src/index.ts`](../packages/util/random-uuid/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）
