@@ -34,4 +34,16 @@ await page.waitForTimeout(2500)
 await shot('02-session-open')
 console.log('--- session view ---')
 console.log(await page.evaluate(() => document.body.innerText.slice(0, 1200)))
+
+// The binding stands in for a workspace, so the composer must accept typing
+// with no pick: a disabled box here is the whole failure this flow removes.
+console.log('composer:', await page.evaluate(() => {
+  const el = [...document.querySelectorAll('textarea')]
+    .find(node => !(node.placeholder ?? '').includes('搜索'))
+  return el === undefined
+    ? 'no composer'
+    : JSON.stringify({ disabled: el.disabled, readOnly: el.readOnly, placeholder: el.placeholder })
+}))
+console.log('chip:', await page.evaluate(() =>
+  document.querySelector('[data-connector-workspace]')?.getAttribute('title')))
 await browser.close()
