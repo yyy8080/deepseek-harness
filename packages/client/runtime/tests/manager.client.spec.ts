@@ -760,6 +760,34 @@ describe('remaining branches', () => {
     expect(await manager.create()).toMatchObject({ ok: false })
   })
 
+  it('carries a created session\u2019s connector from the create echo and the host frames', async () => {
+    const api = new FakeApiClient()
+    api.onCreate = () => Promise.resolve(ok({ sessionId: S1, connectorId: 'build-box' } as never))
+    const manager = new SessionManager(api, fakeRemote())
+    await manager.create({ connectorId: 'build-box', cwd: '/srv/work' })
+    // The echo is what keeps the new conversation's composer live before any
+    // list refresh: it names the target that stands in for a local workspace.
+    expect(api.callsOf('session.create')).toEqual([{ cwd: '/srv/work', connectorId: 'build-box' }])
+    expect(manager.getListSnapshot().items[0]).toMatchObject({ connectorId: 'build-box' })
+    api.onList = () => Promise.resolve(ok({
+      items: [{ ...summary(S1), connectorId: 'build-box' }] as never[],
+    }))
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items[0]).toMatchObject({ connectorId: 'build-box' })
+
+    // A row first seen without a binding adopts the one a later frame reports.
+    manager.handleHostEnvelope({
+      rpcId: 'added' as never,
+      payload: { type: 'host/session-added', blank: true, sessionId: S2 },
+    })
+    manager.handleHostEnvelope({
+      rpcId: 'added-bound' as never,
+      payload: { type: 'host/session-added', blank: true, sessionId: S2, connectorId: 'lab-box' },
+    })
+    expect(manager.getListSnapshot().items.find(item => item.sessionId === S2))
+      .toMatchObject({ connectorId: 'lab-box' })
+  })
+
   it('publishes a real Ungrouped summary from workspace-attach-failed', async () => {
     const api = new FakeApiClient()
     api.onCreate = () => Promise.resolve(err({

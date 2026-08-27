@@ -212,6 +212,14 @@ export interface SessionSummary {
    */
   agentPreset?: string
   /**
+   * Connector this session's files and commands run on, absent for a session
+   * running on the machine hosting this gateway. It is resolved from the
+   * session log, which is the binding's only authority, so a cold row —
+   * listed from the header index alone — carries none until the session is
+   * attached and its log read.
+   */
+  connectorId?: string
+  /**
    * Projection baseline for this row, with zero log loads: attached sessions
    * read the registry's live watermark cut; cold sessions read the persisted
    * projection cache's stored rows — as stale as that session's last durable
@@ -271,6 +279,10 @@ export interface SessionsApi {
    * providers, which `connectorPortal.list` reports. `cwd` is then read as a
    * path in the TARGET's filesystem and recorded verbatim: this machine
    * neither creates nor validates it.
+   *
+   * The result echoes the composition the session runs and the connector it
+   * is bound to, so a client can label the new conversation without waiting
+   * for the next list refresh.
    */
   create(request: RpcRequest<{
     workspaceId?: WorkspaceId
@@ -279,7 +291,7 @@ export interface SessionsApi {
     agentPreset?: string
     connectorId?: string
   }>):
-  Promise<RpcResponse<{ sessionId: SessionId; agentPreset?: string }>>
+  Promise<RpcResponse<{ sessionId: SessionId; agentPreset?: string; connectorId?: string }>>
 
   /**
    * Reads a window of history events; page boundaries align to append-origin message

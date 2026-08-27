@@ -28,23 +28,45 @@ export function workspaceLabel(cwd: string): string {
 }
 
 /**
- * The workspace chip (folder + label + chevron), always interactive: before
- * the first message the workspace stays switchable — picking another one
- * moves the New Session flow to that workspace's blank session. Without a
+ * The workspace chip (folder + label + chevron), interactive as a selector:
+ * before the first message the workspace stays switchable — picking another
+ * one moves the New Session flow to that workspace's blank session. Without a
  * label the chip renders its placeholder state: closed folder + the
  * "Choose workspace" call to action.
+ *
+ * The `connector` variant is the read-only form for a conversation bound to
+ * another machine: that session's directory lives in the target's filesystem,
+ * which no local workspace owns and no pick can change, so the chip names the
+ * target and opens nothing.
  * @param props.label - chip label (see {@link workspaceLabel}); omitted → placeholder.
  * @param props.menuOpen - menu expansion echo.
- * @param props.onClick - menu toggle.
+ * @param props.onClick - menu toggle (ignored by the `connector` variant).
+ * @param props.variant - `workspace` (default) selector, or the read-only `connector` form.
  * @returns the chip button element.
  */
-export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }: {
+export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t, variant = 'workspace' }: {
   buttonRef?: RefObject<HTMLButtonElement>
   label?: string | undefined
   menuOpen?: boolean
   onClick?: () => void
   t: HeroTranslate
+  variant?: 'workspace' | 'connector'
 }) {
+  if (variant === 'connector') {
+    return (
+      <button
+        ref={buttonRef}
+        type="button"
+        className={css.workspace}
+        aria-label={t('hero.connectorWorkspace')}
+        aria-disabled="true"
+        data-connector-workspace=""
+      >
+        <IconFolderOpen16 className={css.folder} size={16} />
+        <span className={css.workspaceLabel}>{label}</span>
+      </button>
+    )
+  }
   return (
     <button
       ref={buttonRef}

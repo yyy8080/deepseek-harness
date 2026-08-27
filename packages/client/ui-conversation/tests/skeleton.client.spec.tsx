@@ -101,6 +101,8 @@ function mount(
     nestedSubagent?: boolean
     /** A composer block another plugin raised for this session. */
     composerBlock?: { reason: string }
+    /** Bind the selected session's execution world to this connector. */
+    connectorId?: string
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
   } = {},
@@ -116,6 +118,7 @@ function mount(
     id: SID, displayTitle: 'Child', parentId: options.nestedSubagent === true ? parent : root,
     cwd: '/projects/one', running: false, blank: options.summaryBlank ?? false, updatedAt: 3,
     ...(options.summaryOrigin === undefined ? {} : { origin: options.summaryOrigin }),
+    ...(options.connectorId === undefined ? {} : { connectorId: options.connectorId }),
   }
   const listed = options.omitSummaryRow !== true
   const sessions = createSnapshotStore<SessionListState>({
@@ -427,6 +430,28 @@ describe('ConversationRoot resident composer', () => {
     act(() => { owner.onPick(wid('second')) })
     expect(b.retargetWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.getByText('Selected Folder')).toBeTruthy()
+  })
+
+  it('hero phase: a connector-bound session names its target and composes without a workspace', () => {
+    // The session's cwd lives in the target's filesystem, so the workspace
+    // list owns nothing here. Demanding a pick would leave the conversation
+    // permanently unusable — the binding is the prerequisite it stands in for.
+    const b = mount(
+      conversationSnapshot({ composerPhase: 'blank', blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, connectorId: 'build-box' },
+    )
+    const box = b.view.getByRole('textbox') as HTMLTextAreaElement
+    expect(box.disabled).toBe(false)
+    expect(box.readOnly).toBe(false)
+    expect(box.placeholder).toBe('描述你想要构建的内容')
+    // The chip reports the machine and its directory, and opens no picker:
+    // no local workspace can be substituted for the binding.
+    expect(b.view.getByText('build-box · one')).toBeTruthy()
+    expect(b.view.queryByRole('button', { name: '选择工作区' })).toBeNull()
+    fireEvent.click(b.view.getByRole('button', { name: /已连接的机器/ }))
+    expect(b.pickerOwner()).toBeUndefined()
   })
 
   it('settling phase: a summary that does not prove the session blank hides the composer while it opens', () => {

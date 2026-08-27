@@ -114,6 +114,18 @@ describe('session.create with a connector', () => {
     expect(boundConnector(ctx, sessionId)).toBe('build-box')
   })
 
+  it('reports the binding to the caller and to every later listing', async () => {
+    const { api } = await harness(['build-box'])
+
+    const created = expectOk(await api.sessions.create(request({ connectorId: 'build-box' })))
+    const listed = expectOk(await api.sessions.list(request({})))
+
+    // The create echo is what lets a client label the conversation — and keep
+    // its composer live — before the first list refresh lands.
+    expect(created.connectorId).toBe('build-box')
+    expect(listed.items.map(item => item.connectorId)).toEqual(['build-box'])
+  })
+
   it('starts the conversation in the directory the caller asked for', async () => {
     const { api, ctx } = await harness(['build-box'])
 

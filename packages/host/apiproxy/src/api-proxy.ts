@@ -21,7 +21,7 @@ import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 // execution-world binding, and `session.create` is where a connector-bound
 // conversation is born. The registry itself stays optional (`ctx.get`), so a
 // deployment composing no connectors still serves every other create.
-import { bindSessionConnector, ConnectorId } from '@deepseek-ai/dsh-connector'
+import { bindSessionConnector, ConnectorId, effectiveConnectorId } from '@deepseek-ai/dsh-connector'
 import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -483,16 +483,21 @@ function sessionListFields(header: SessionHeader, events: readonly SessionEvent[
   origin?: 'subagent'
   cwd?: string
   agentPreset?: string
+  connectorId?: string
 } {
   // The preset comes from the log, not the header: a session that switched
   // while blank ran its turns under the newer composition, and a picker
   // showing the creation-time value would contradict what the model saw.
   const agentPreset = resolveSessionPreset({ header, events })
+  // The binding has no header field at all — the log is its only authority —
+  // so a caller that passes no events gets no binding rather than a wrong one.
+  const connectorId = effectiveConnectorId(events)
   return {
     ...header.parentSession === undefined ? {} : { parentSessionId: header.parentSession },
     ...header.origin === undefined ? {} : { origin: header.origin },
     ...header.cwd === undefined ? {} : { cwd: header.cwd },
     ...agentPreset === undefined ? {} : { agentPreset },
+    ...connectorId === undefined ? {} : { connectorId: String(connectorId) },
   }
 }
 
@@ -2203,7 +2208,15 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         const created = ctx.agents.get(sessionId)
         const createdPreset = created === undefined ? undefined : resolveSessionPreset(created.session)
-        return ok(request, { sessionId, ...createdPreset === undefined ? {} : { agentPreset: createdPreset } })
+        // Read back rather than echoing the request: adopting a session that
+        // was already bound reports that binding, and the client needs it to
+        // know the conversation does not run on a local workspace.
+        const boundConnector = created === undefined ? undefined : effectiveConnectorId(created.session.events)
+        return ok(request, {
+          sessionId,
+          ...createdPreset === undefined ? {} : { agentPreset: createdPreset },
+          ...boundConnector === undefined ? {} : { connectorId: String(boundConnector) },
+        })
       },
 
       async history(request) {

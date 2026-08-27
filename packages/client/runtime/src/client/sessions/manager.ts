@@ -543,7 +543,7 @@ export class SessionManager {
       agentPreset?: string
       connectorId?: string
     } = {},
-  ): Promise<RpcResult<{ sessionId: SessionId; agentPreset?: string }>> {
+  ): Promise<RpcResult<{ sessionId: SessionId; agentPreset?: string; connectorId?: string }>> {
     try {
       const shared = {
         ...opts.sessionId === undefined ? {} : { sessionId: opts.sessionId },
@@ -559,6 +559,7 @@ export class SessionManager {
           sessionId: result.value.sessionId, updatedAt: Date.now(), running: false, blank: true,
           ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
           ...(result.value.agentPreset !== undefined ? { agentPreset: result.value.agentPreset } : {}),
+          ...(result.value.connectorId !== undefined ? { connectorId: result.value.connectorId } : {}),
         } })
       } else {
         const publishedSessionId = workspaceAttachSessionId(result.error)
@@ -814,6 +815,7 @@ export class SessionManager {
           ...(frame.origin !== undefined ? { origin: frame.origin } : {}),
           ...(frame.cwd !== undefined ? { cwd: frame.cwd } : {}),
           ...(frame.agentPreset !== undefined ? { agentPreset: frame.agentPreset } : {}),
+          ...(frame.connectorId !== undefined ? { connectorId: frame.connectorId } : {}),
         })
         this.sessions.get(frame.sessionId)?.handleBlank(frame.blank)
         if (frame.origin === 'subagent' && frame.parentSessionId !== undefined) {
@@ -1109,10 +1111,16 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
         // create echo, the select echo, a list row) reports the CURRENT one.
         ...(mutation.summary.agentPreset !== undefined
           ? { agentPreset: mutation.summary.agentPreset } : {}),
+        // Fill-only, unlike the preset: a cold list row is projected from the
+        // header index alone and reports no binding, so newest-wins would drop
+        // the create echo's connector on the very next refresh.
+        ...(existing.connectorId === undefined && mutation.summary.connectorId !== undefined
+          ? { connectorId: mutation.summary.connectorId } : {}),
       }
       if (filled.cwd === existing.cwd && filled.parentSessionId === existing.parentSessionId
         && filled.origin === existing.origin && filled.blank === existing.blank
-        && filled.agentPreset === existing.agentPreset) return [...summaries]
+        && filled.agentPreset === existing.agentPreset
+        && filled.connectorId === existing.connectorId) return [...summaries]
       return summaries.map(summary => summary.sessionId === mutation.summary.sessionId ? filled : summary)
     }
     case 'remove':

@@ -52,6 +52,12 @@ export interface SessionSummary {
    * session actually runs rather than the deployment's current default.
    */
   agentPreset?: string
+  /**
+   * Connector this session's files and commands run on; absent when they run
+   * on the machine hosting the gateway. `cwd` is then a directory in that
+   * target's filesystem, which no local Workspace owns.
+   */
+  connectorId?: string
   parentId?: SessionId
   /** Coarse durable origin for navigation filtering; not a continuation capability. */
   origin?: 'subagent'
@@ -706,6 +712,7 @@ export class SessionRuntime implements ISessions {
         ...(entry.parentSessionId !== undefined ? { parentId: entry.parentSessionId } : {}),
         ...(entry.origin !== undefined ? { origin: entry.origin } : {}),
         ...(entry.agentPreset !== undefined ? { agentPreset: entry.agentPreset } : {}),
+        ...(entry.connectorId !== undefined ? { connectorId: entry.connectorId } : {}),
       }
     }
     if (current !== undefined && currentAddress !== undefined) {
