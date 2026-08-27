@@ -26,6 +26,12 @@ Underneath both sat a conflation. `PRIVILEGED_METHODS` mixed methods that act on
 
 **`'trusted-hosts'` is stated as a trust decision, not a convenience.** `trustedHosts` is a DNS-rebinding fence, not authentication. Under this scope every caller that can reach the port may read the configuration, learn which environment variables hold credentials and where they resolve from, write new ones, and make the host issue a GET to a URL of their choosing. The flag's help text, both package READMEs, and the type's JSDoc say so: a deployment choosing it owes its users an authentication layer in front of the server. The default did not move, so no existing deployment's exposure changed.
 
+## Testing
+
+The fence split is asserted over a real HTTP server in `packages/client/connection/tests/node-half.host.spec.ts`, which the [boundary note](2026-07-30-config-plane-boundaries.md) established as the only honest way to check it: a declared authority is refused the configuration plane under the default scope and served it under `'trusted-hosts'`, while the native-desktop methods are refused under both. The same tests assert the injected `__DSH_CONFIGURATION_PLANE__` row, and `client-apply.client.spec.ts` asserts the browser handle takes the gate from that global rather than the page hostname — including a remote page the served scope opens and a remote page it does not.
+
+No keyless snapshot covers this. The snapshot harnesses replay ACP and headless transcripts, which carry no browser page and therefore no page authority; the served web suite boots on loopback, where this change is a no-op by construction. What the change alters is only observable when the `Host` header names a non-loopback authority, so the evidence is the deployed run recorded in the pull request instead.
+
 ## Alternatives considered
 
 - **Delete the browser-side gate and let a 403 speak.** The smallest diff, and it removes the duplicated fact outright — but the mirror reads once at `apply`, before connect, and the HTTP carrier turns a 403 into an untyped transport rejection. Every genuinely untrusted remote page would trade a designed message for a raw failure string, and detecting refusal would mean matching on that string. Rejected for the round trip and the string match, not for the honesty.

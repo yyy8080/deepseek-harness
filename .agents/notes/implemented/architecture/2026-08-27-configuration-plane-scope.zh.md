@@ -26,6 +26,12 @@ Status: implemented
 
 **`'trusted-hosts'` 被写明为一项信任决策，而非便利开关。**`trustedHosts` 是 DNS rebinding 栅栏，不是认证。在这个 scope 下，凡能连上该端口的调用方都可以读取配置、得知哪些环境变量存放凭据以及它们从何处解析、写入新的凭据，并让宿主向其选定的 URL 发起 GET。命令行标志的帮助文本、两个包的 README 与该类型的 JSDoc 都如实写明：选择它的部署，有义务在服务器前面为用户加一层认证。默认值没有变动，因此任何既有部署的暴露面都未改变。
 
+## Testing
+
+栅栏拆分在 `packages/client/connection/tests/node-half.host.spec.ts` 里对一台真实 HTTP 服务器断言，这正是[边界一文](2026-07-30-config-plane-boundaries.zh.md)确立的唯一诚实检查方式：默认 scope 下一个已声明的权威被拒于配置面之外，`'trusted-hosts'` 下则被服务，而原生桌面方法在两种 scope 下都被拒。同一批测试还断言被注入的 `__DSH_CONFIGURATION_PLANE__` 行；`client-apply.client.spec.ts` 则断言浏览器句柄从那个全局量而非页面 hostname 取得这道门——包含被服务 scope 放行的远程页面，与未被放行的远程页面两种情形。
+
+没有 keyless snapshot 覆盖这一处。snapshot 测试台重放的是 ACP 与 headless transcript（文本记录），其中没有浏览器页面，也就没有页面权威；served web 套件在回环上启动，而本变更在那里按构造就是空操作。本变更改变的东西只有在 `Host` 头指向非回环权威时才可观测，因此证据是 PR（Pull Request）中记录的那次实际部署运行。
+
 ## Alternatives considered
 
 - **删掉浏览器侧的门，让 403 自己说话。** 改动最小，且直接消除了那份重复的事实——但 mirror 在 `apply` 时就读一次，早于 connect，而 HTTP 载体会把 403 变成一个无类型的传输拒绝。每个确实不受信任的远程页面都会用一句精心设计的提示换来一串原始失败字符串，而识别「被拒绝」将意味着去匹配那串字符串。否决理由是那次往返与字符串匹配，不是它的诚实。
