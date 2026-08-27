@@ -415,12 +415,34 @@ export interface ConnectionConfig {
    * that is not a bare, canonical authority fails the plugin load.
    */
   trustedHosts?: string[]
+  /**
+   * Who may reach the configuration plane ({@link CONFIGURATION_PLANE_METHODS}).
+   * `loopback` (default) keeps it same-origin on the host machine;
+   * `trusted-hosts` extends it to every `trustedHosts` authority, which is the
+   * only way a remote browser can configure model providers and is a
+   * deliberate trust decision — `trustedHosts` is a DNS-rebinding fence, not
+   * authentication, so this scope hands the configuration and secret store to
+   * anyone who can reach the port. Deployments choosing it must put their own
+   * authentication in front of the server.
+   */
+  configurationPlane?: ConfigurationPlaneScope
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
+
+/**
+ * Who the deployment serves the configuration plane to.
+ *
+ * `loopback` is the default and the only scope that is safe without an
+ * authentication layer: the plane stays same-origin on the machine running the
+ * host. `trusted-hosts` extends it to the authorities in `trustedHosts`, which
+ * is a DNS-rebinding fence and NOT authentication — choosing it means every
+ * caller that can reach the port may read and rewrite the configuration.
+ */
+export type ConfigurationPlaneScope = 'loopback' | 'trusted-hosts'
 ```
 
-来源：[`packages/client/connection/src/index.ts:50`](../packages/client/connection/src/index.ts)
+来源：[`packages/client/connection/src/index.ts:56`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -3219,10 +3241,19 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /**
+   * Who this invocation serves the configuration plane to, forwarded verbatim
+   * to the `/api` fence and to the browser: `loopback` (the default) or
+   * `trusted-hosts`, which is the remote-deployment scope described on
+   * `ConnectionConfig.configurationPlane`.
+   */
+  configurationPlane: ConfigurationPlaneScope
 }
 ```
 
-来源：[`packages/bundle/web-app/src/index.ts:42`](../packages/bundle/web-app/src/index.ts)
+依赖：[`ConfigurationPlaneScope`](../packages/client/connection/src/index.ts)
+
+来源：[`packages/bundle/web-app/src/index.ts:45`](../packages/bundle/web-app/src/index.ts)
 
 <a id="deepseek-aidsh-web-fetch-http"></a>
 
