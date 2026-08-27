@@ -470,6 +470,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Registers the machines a deployment can execute on and resolves which one the calling session bound; the two capability providers put ctx.fs and ctx.subprocess on that machine.',
   },
   {
+    key: 'connectorPortal',
+    pkg: 'connector-portal',
+    title: 'Connector enrollment and download portal',
+    mode: 'core',
+    consumers: ['client-ui-settings-connectors'],
+    note: 'Mints an enrollment, serves the start script and agent bundle it names, and registers the machine that dials the attach upgrade back into ctx.connectors.',
+  },
+  {
     key: 'fs',
     pkg: 'fs',
     title: 'Filesystem provider seam',

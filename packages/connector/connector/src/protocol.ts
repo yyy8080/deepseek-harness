@@ -1,9 +1,15 @@
 /**
  * The connector wire protocol: newline-delimited JSON frames carrying
- * request/response calls plus server-initiated process notifications. TCP was
- * chosen over an HTTP upgrade because it needs no dependency on either side,
- * runs unchanged on Linux and Windows, and tunnels through `ssh -L` without a
- * proxy that understands the payload.
+ * request/response calls plus server-initiated process notifications. The frame
+ * stream needs no dependency on either side, runs unchanged on Linux and
+ * Windows, and tunnels through `ssh -L` without a proxy that understands the
+ * payload.
+ *
+ * Which peer opens the socket is separate from the frames it then carries. A
+ * harness that can reach the target dials its TCP port; a target that cannot be
+ * dialled — the ordinary laptop or NAT case — reverses the dial with the HTTP
+ * upgrade this module also names, after which the harness is still the client
+ * that sends `hello`. Both routes carry the identical frames.
  *
  * Both the connector agent and every client transport decode frames through
  * this module, so the wire contract has one home.
@@ -26,6 +32,27 @@ export const CONNECTOR_PROTOCOL_VERSION = 1
  * large enough for a whole-file write of the size the filesystem tools produce.
  */
 export const CONNECTOR_MAX_FRAME_BYTES = 64 * 1024 * 1024
+
+/**
+ * Protocol token both halves name in the HTTP `Upgrade` handshake that opens a
+ * reversed connection. A deployment serving other upgrade protocols on the same
+ * origin routes on this value.
+ */
+export const CONNECTOR_UPGRADE_PROTOCOL = 'dsh-connector'
+
+/**
+ * Request header carrying the enrollment secret an attaching agent presents.
+ * The deployment authenticates the agent from it before answering `101`; the
+ * `hello` frame that follows authenticates the deployment to the agent.
+ */
+export const CONNECTOR_TOKEN_HEADER = 'x-dsh-connector-token'
+
+/**
+ * Request header carrying the operator-facing name of the attaching machine.
+ * It is display text chosen by whoever runs the agent, never an identity the
+ * deployment trusts for authorization.
+ */
+export const CONNECTOR_LABEL_HEADER = 'x-dsh-connector-label'
 
 /** Opening client frame; the agent answers with `ready` or closes the socket. */
 export interface ConnectorHelloFrame {

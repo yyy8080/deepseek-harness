@@ -21,10 +21,18 @@ import { createConnectorHost, hostConnectorOs } from './host.ts'
 
 export { createConnectorHost, hostConnectorOs } from './host.ts'
 export type { ConnectorHostOptions } from './host.ts'
-export { serveConnector, wireError } from './server.ts'
+export { serveConnector, serveConnectorSocket, wireError } from './server.ts'
 export type { ConnectorServeOptions, ConnectorServer } from './server.ts'
-export { CONNECTOR_AGENT_USAGE, CONNECTOR_TOKEN_ENV, parseConnectorAgentArgs, runConnectorAgent } from './agent.ts'
-export type { ConnectorAgentInvocation } from './agent.ts'
+export { runConnectorAttachment } from './attach.ts'
+export type { ConnectorAttachOptions } from './attach.ts'
+export {
+  CONNECTOR_AGENT_USAGE,
+  CONNECTOR_ATTACH_ENV,
+  CONNECTOR_TOKEN_ENV,
+  parseConnectorAgentArgs,
+  runConnectorAgent,
+} from './agent.ts'
+export type { ConnectorAgentAttach, ConnectorAgentInvocation, ConnectorAgentListen } from './agent.ts'
 
 /** Cordis plugin name. */
 export const name = 'connector-host'

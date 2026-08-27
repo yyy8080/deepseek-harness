@@ -43,6 +43,8 @@ function main(): void {
 
   rmSync(resolve(root, CLIENT_BUILD_RECORD_PATH), { force: true })
   runScript('build:lib', buildEnvironment)
+  // Inlines the lib bundles the previous step emitted, so it cannot join them.
+  runScript('build:connector-agent', buildEnvironment)
   runScript('build:web', buildEnvironment)
   const record = writeClientBuildRecord(root, clientEnvironment)
   console.log(
