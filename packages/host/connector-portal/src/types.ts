@@ -57,10 +57,86 @@ export interface ConnectorEnrollmentView {
   readonly expiresAt: number
 }
 
+/**
+ * Whether this deployment can start a conversation bound to a connector, and
+ * with which composition. A binding only reaches the model when the session's
+ * agent is composed from a preset that mounts the connector-backed filesystem
+ * and subprocess providers; a deployment whose configured preset does neither
+ * would run the conversation on the harness machine while the UI claimed
+ * otherwise, so the portal reports the refusal instead of offering the action.
+ */
+export type ConnectorChatAvailability =
+  | {
+    readonly ready: true
+    /** Agent preset a connector conversation is composed from. */
+    readonly agentPreset: string
+  }
+  | {
+    readonly ready: false
+    /** Machine-routable reason the action is unavailable. */
+    readonly reason: ConnectorChatRefusal
+    /** Operator-facing text naming what to configure. */
+    readonly message: string
+  }
+
+/** Why a deployment cannot start connector-bound conversations. */
+export type ConnectorChatRefusal =
+  /** No agent-preset roster is composed, so no session can name a composition. */
+  | 'no-preset-roster'
+  /** The configured preset id is absent from the roster. */
+  | 'preset-missing'
+  /** The configured preset composes no connector-backed execution world. */
+  | 'preset-not-connector-backed'
+
 /** Point-in-time view of every enrollment this deployment is holding. */
 export interface ConnectorPortalSnapshot {
   readonly enrollments: readonly ConnectorEnrollmentView[]
+  /** Whether the browser may offer "start a chat on this machine", and how. */
+  readonly chat: ConnectorChatAvailability
 }
+
+/** Which attached machine a liveness probe checks. */
+export interface ConnectorProbeRequest {
+  readonly enrollmentId: ConnectorEnrollmentId
+}
+
+/** Why a liveness probe could not complete a round trip. */
+export type ConnectorProbeFailure =
+  /** No enrollment answers that id — it was revoked, or the harness restarted. */
+  | 'unknown-enrollment'
+  /** The enrollment exists but no agent is currently connected. */
+  | 'not-attached'
+  /** An agent holds the connection but the round trip failed or timed out. */
+  | 'link-failed'
+
+/**
+ * The outcome of one active round trip over a connector's live link. It is
+ * never derived from the ledger's `attached` status: that records the last
+ * handshake, while this records an operation the target answered just now.
+ */
+export type ConnectorProbeReport =
+  | {
+    readonly alive: true
+    readonly enrollmentId: ConnectorEnrollmentId
+    /** Epoch milliseconds the probe ran at. */
+    readonly probedAt: number
+    /** Wall-clock milliseconds the round trip took. */
+    readonly latencyMs: number
+    /** Canonical absolute workdir path the TARGET resolved, in its own dialect. */
+    readonly resolvedWorkdir: string
+    /** Whether that path is a directory on the target right now. */
+    readonly workdirIsDirectory: boolean
+  }
+  | {
+    readonly alive: false
+    readonly enrollmentId: ConnectorEnrollmentId
+    /** Epoch milliseconds the probe ran at. */
+    readonly probedAt: number
+    /** Machine-routable failure code. */
+    readonly failure: ConnectorProbeFailure
+    /** Operator-facing text naming the next action. */
+    readonly message: string
+  }
 
 /** Which enrollment a browser is discarding. */
 export interface ConnectorRevokeRequest {

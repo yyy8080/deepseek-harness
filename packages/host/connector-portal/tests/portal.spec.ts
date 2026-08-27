@@ -51,11 +51,27 @@ interface Harness {
   origin: string
 }
 
-async function harness(config: Config = {}): Promise<Harness> {
+/**
+ * A preset roster answering `read` for exactly the compositions it is given.
+ * Only that one method is reachable from the portal, which asks the roster a
+ * single question: what does the configured preset compose?
+ * @param compositions - preset id to composition text.
+ * @returns the roster double.
+ */
+function roster(compositions: Readonly<Record<string, string>>): unknown {
+  return {
+    read: (id: string) => Object.hasOwn(compositions, id)
+      ? Promise.resolve(compositions[id] as string)
+      : Promise.reject(new Error(`unknown preset ${JSON.stringify(id)}`)),
+  }
+}
+
+async function harness(config: Config = {}, presets?: Readonly<Record<string, string>>): Promise<Harness> {
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   await ctx.plugin(ConnectorRegistry, {})
+  if (presets !== undefined) ctx.provide('agentPresets', roster(presets) as never)
   await ctx.plugin(ConnectorPortal, { agentProgramPath: AGENT_PROGRAM, ...config })
   const portal = ctx.get('connectorPortal') as ConnectorPortal
   return { ctx, portal, origin: `http://127.0.0.1:${String(ctx.webServer.port)}` }
@@ -166,13 +182,14 @@ async function get(origin: string, path: string): Promise<{ status: number; body
 }
 
 describe('the Remote the browser calls', () => {
-  it('publishes issue, list, and revoke under the connectorPortal namespace', async () => {
+  it('publishes issue, list, probe, and revoke under the connectorPortal namespace', async () => {
     const { portal } = await harness()
 
     expect(portal.typertRemote).toMatchObject({ serviceKey: 'connectorPortal', namespace: 'connectorPortal' })
     expect(remoteMethods(portal)).toEqual([
       { method: 'issue', invocation: { kind: 'direct' } },
       { method: 'list', invocation: { kind: 'direct' } },
+      { method: 'probe', invocation: { kind: 'direct' } },
       { method: 'revoke', invocation: { kind: 'direct' } },
     ])
   })
@@ -185,13 +202,46 @@ describe('the Remote the browser calls', () => {
     expect(ticket).toMatchObject({ os: 'windows', fileName: 'dsh-connector.ps1' })
     expect(ticket.downloadPath).toBe(`/connector/pack/${String(ticket.enrollmentId)}`)
     expect(ticket.installPath).toBe(ticket.downloadPath)
-    expect(portal.list().enrollments).toEqual([expect.objectContaining({ status: 'issued', os: 'windows' })])
+    expect((await portal.list()).enrollments).toEqual([expect.objectContaining({ status: 'issued', os: 'windows' })])
   })
 
   it('reports a revoke of an enrollment it no longer holds', async () => {
     const { portal } = await harness()
 
     await expect(portal.revoke({ enrollmentId: 'never-issued' as never })).resolves.toEqual({ revoked: false })
+  })
+})
+
+describe('whether a conversation can be started on a machine', () => {
+  const connectorBacked = '- id: fs\n  name: \'@deepseek-ai/dsh-fs-connector\'\n'
+
+  it('names the composition a connector conversation is built from', async () => {
+    const { portal } = await harness({ chatPreset: 'connector' }, { connector: connectorBacked })
+
+    expect((await portal.list()).chat).toEqual({ ready: true, agentPreset: 'connector' })
+  })
+
+  it('follows a roster the deployment changes while it runs', async () => {
+    const compositions: Record<string, string> = {}
+    const { portal } = await harness({ chatPreset: 'connector' }, compositions)
+    expect((await portal.list()).chat).toMatchObject({ ready: false, reason: 'preset-missing' })
+
+    compositions.connector = connectorBacked
+
+    expect((await portal.list()).chat).toEqual({ ready: true, agentPreset: 'connector' })
+  })
+
+  it.each([
+    ['this deployment composes no presets at all', undefined, 'no-preset-roster'],
+    ['the configured preset is absent', { standard: connectorBacked }, 'preset-missing'],
+    ['the configured preset runs on this machine', { connector: '- id: fs\n  name: \'@deepseek-ai/dsh-fs-local\'\n' }, 'preset-not-connector-backed'],
+  ])('refuses, saying %s', async (_case, presets, reason) => {
+    const { portal } = await harness({ chatPreset: 'connector' }, presets)
+
+    const { chat } = await portal.list()
+
+    expect(chat).toMatchObject({ ready: false, reason })
+    expect((chat as { message: string }).message).not.toBe('')
   })
 })
 
@@ -215,7 +265,7 @@ describe('the routes the portal registers', () => {
     expect(response.status).toBe(200)
     expect(response.headers['content-disposition']).toBe('attachment; filename="dsh-connector.sh"')
     expect(response.body).toContain(`DSH_ATTACH_URL="${origin}/connector/attach"`)
-    expect(portal.list().enrollments[0]).toMatchObject({ status: 'downloaded' })
+    expect((await portal.list()).enrollments[0]).toMatchObject({ status: 'downloaded' })
   })
 
   it('renders the pack for a configured public origin when a proxy rewrites Host', async () => {
@@ -291,7 +341,7 @@ describe('an agent attaching', () => {
     await attachAgent(origin, token, 'build-box', process.cwd())
     await attached
 
-    expect(portal.list().enrollments[0]).toMatchObject({
+    expect((await portal.list()).enrollments[0]).toMatchObject({
       status: 'attached',
       label: 'build-box',
       connectorId: String(ticket.enrollmentId),
@@ -333,7 +383,7 @@ describe('an agent attaching', () => {
 
     await expect(portal.revoke({ enrollmentId: ticket.enrollmentId })).resolves.toEqual({ revoked: true })
 
-    expect(portal.list().enrollments).toEqual([])
+    expect((await portal.list()).enrollments).toEqual([])
     expect(ctx.connectors.list()).toEqual([])
   })
 
@@ -385,7 +435,7 @@ describe('an agent attaching', () => {
     )
     await attached
 
-    expect(portal.list().enrollments[0]).toMatchObject({ label: '/srv/eager', workdir: '/srv/eager' })
+    expect((await portal.list()).enrollments[0]).toMatchObject({ label: '/srv/eager', workdir: '/srv/eager' })
   })
 
   it('drops an agent that answers the handshake with something other than ready', async () => {
@@ -399,7 +449,7 @@ describe('an agent attaching', () => {
     )
     await once(socket, 'close')
 
-    expect(portal.list().enrollments[0]).toMatchObject({ status: 'downloaded' })
+    expect((await portal.list()).enrollments[0]).toMatchObject({ status: 'downloaded' })
     expect(ctx.connectors.list()).toEqual([])
   })
 
@@ -415,7 +465,7 @@ describe('an agent attaching', () => {
     socket.write(readyFrame('/srv/late'))
     await once(socket, 'close')
 
-    expect(portal.list().enrollments).toEqual([])
+    expect((await portal.list()).enrollments).toEqual([])
     expect(ctx.connectors.list()).toEqual([])
   })
 
@@ -434,8 +484,70 @@ describe('an agent attaching', () => {
     slow.socket.write(readyFrame('/srv/slow'))
     await once(slow.socket, 'close')
 
-    expect(portal.list().enrollments[0]).toMatchObject({ status: 'attached', label: 'fast' })
+    expect((await portal.list()).enrollments[0]).toMatchObject({ status: 'attached', label: 'fast' })
     expect(ctx.connectors.list().map(descriptor => descriptor.workdir)).toEqual(['/srv/fast'])
+  })
+
+  it('answers a liveness probe with the round trip the target completed', async () => {
+    const { ctx, portal, origin } = await harness()
+    const { id, token } = await enroll(portal, origin)
+    const attached = new Promise<void>((resolve) => { ctx.once('connector-portal/attached', () => { resolve() }) })
+    await attachAgent(origin, token, 'build-box', PACKAGE_DIR)
+    await attached
+
+    const report = await portal.probe({ enrollmentId: id })
+
+    expect(report).toMatchObject({ alive: true, enrollmentId: id, workdirIsDirectory: true })
+    // The target resolves its own workdir, so the answer is its canonical path
+    // rather than the string the handshake happened to carry.
+    expect((report as { resolvedWorkdir: string }).resolvedWorkdir).toContain('connector-portal')
+    expect((report as { latencyMs: number }).latencyMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('reports a live link whose working directory is gone', async () => {
+    const { ctx, portal, origin } = await harness()
+    const { id, token } = await enroll(portal, origin)
+    const attached = new Promise<void>((resolve) => { ctx.once('connector-portal/attached', () => { resolve() }) })
+    await attachAgent(origin, token, 'build-box', `${PACKAGE_DIR}never-existed`)
+    await attached
+
+    // The link answered, which is what the probe measures; the directory it
+    // answered about is a separate fact the operator still needs.
+    expect(await portal.probe({ enrollmentId: id }))
+      .toMatchObject({ alive: true, workdirIsDirectory: false })
+  })
+
+  it('reports a target that holds the connection but stopped answering', async () => {
+    const { ctx, portal, origin } = await harness({ probeTimeoutMs: 250 })
+    const { id, token } = await enroll(portal, origin)
+    const attached = new Promise<void>((resolve) => { ctx.once('connector-portal/attached', () => { resolve() }) })
+    // A raw socket completes the handshake and then serves nothing, which is
+    // what a suspended or wedged target looks like from this side.
+    await rawAttach(
+      origin,
+      [`upgrade: ${CONNECTOR_UPGRADE_PROTOCOL}`, `${CONNECTOR_TOKEN_HEADER}: ${token}`],
+      readyFrame('/srv/silent'),
+    )
+    await attached
+
+    const report = await portal.probe({ enrollmentId: id })
+
+    expect(report).toMatchObject({ alive: false, failure: 'link-failed' })
+    expect((report as { message: string }).message).toContain('re-run the connector pack')
+    // The ledger still reads "attached", which is exactly why the probe exists.
+    expect((await portal.list()).enrollments[0]).toMatchObject({ status: 'attached' })
+  })
+
+  it.each([
+    ['an enrollment it never issued', undefined, 'unknown-enrollment'],
+    ['an enrollment no agent has dialled in for', 'issued', 'not-attached'],
+  ])('refuses to call %s alive', async (_case, state, failure) => {
+    const { portal } = await harness()
+    const enrollmentId = state === 'issued'
+      ? portal.issue({ os: 'linux' }).enrollmentId
+      : 'never-issued' as ConnectorEnrollmentId
+
+    expect(await portal.probe({ enrollmentId })).toMatchObject({ alive: false, enrollmentId, failure })
   })
 
   it('drops a connection that names a protocol other than the connector upgrade', async () => {

@@ -261,8 +261,22 @@ export interface SessionsApi {
    * the session header, so a later resume rebuilds the same agent. An unknown
    * id fails with `agent-preset-not-found`, and a preset whose composition
    * cannot be mounted fails with `agent-preset-invalid`.
+   *
+   * `connectorId` binds the session's execution world to one registered
+   * connector by appending one `connector/bound` event, so its next file or
+   * command runs on that machine; the last binding in the log wins. The
+   * connector must be registered when the call arrives, else
+   * `connector-not-registered` and no session is created or bound. Reaching
+   * the target also needs an agent preset composing the connector-backed
+   * providers, which `connectorPortal.list` reports.
    */
-  create(request: RpcRequest<{ workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId; agentPreset?: string }>):
+  create(request: RpcRequest<{
+    workspaceId?: WorkspaceId
+    cwd?: string
+    sessionId?: SessionId
+    agentPreset?: string
+    connectorId?: string
+  }>):
   Promise<RpcResponse<{ sessionId: SessionId; agentPreset?: string }>>
 
   /**

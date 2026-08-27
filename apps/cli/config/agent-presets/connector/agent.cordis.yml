@@ -1,0 +1,161 @@
+# The `connector` agent preset: the coding agent, with its execution world on
+# another machine.
+#
+# Everything above the filesystem and subprocess seams is `standard` unchanged —
+# the model loop, the session log, approvals, and the tool catalog all stay in
+# this process. What moves is where files are read and commands run: the
+# `execution-world` group below implements `fs`, `subprocess`, and `shell` over
+# the connector the SESSION is bound to (`connector/bound`), so two sessions on
+# this preset reach two different machines.
+#
+# A session reaches this preset through the Connectors settings page, which
+# creates it with `connectorId` already bound and this composition named. A
+# session composed from it WITHOUT a binding fails its first file or command
+# with `CONNECTOR_UNKNOWN` rather than silently running here — the registry
+# resolves no connector, and this deployment configures no default.
+#
+# The group carries an `isolate` realm for exactly the services it replaces,
+# plus `settings`. The realm on `fs`/`subprocess`/`shell` is what makes the
+# swap per-session instead of process-global; the one on `settings` is what
+# keeps this executor out of the `shell` settings namespace, which the host's
+# own bash executor already owns and which refuses a second registration.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}, on the machine this conversation is connected to rather than the machine hosting it.
+
+- id: agent-instructions
+  name: '@deepseek-ai/dsh-agent-instructions'
+  config:
+    maxBytes: 65536
+
+# ── the execution world ─────────────────────────────────────────────────────
+
+# `tool-bash`, `tool-fs`, and `tool-fs-search` are the same provider-neutral
+# consumers `standard` mounts; they sit INSIDE this group so their `fs`,
+# `subprocess`, and `shell` resolve to the connector-backed rows rather than to
+# the host's local ones. They still register into the host `tools` registry,
+# which is outside the realm.
+#
+# `bash-local` is the ordinary executor: sandboxing is a host-machine mechanism
+# and confines nothing on a target reached over a link, so this composition
+# does not pretend to apply one. Treat a connector session as shell access to
+# the target, which is what enrolling the machine already granted.
+- id: execution-world
+  name: cordis:group
+  group: true
+  isolate:
+    fs: true
+    subprocess: true
+    shell: true
+    settings: true
+  config:
+    - id: fs-connector
+      name: '@deepseek-ai/dsh-fs-connector'
+
+    - id: subprocess-connector
+      name: '@deepseek-ai/dsh-subprocess-connector'
+
+    - id: bash-connector
+      name: '@deepseek-ai/dsh-bash-local'
+      config:
+        timeoutMs: 120000
+        maxTimeoutMs: 600000
+
+    - id: tool-bash
+      name: '@deepseek-ai/dsh-tool-bash'
+
+    - id: tool-fs
+      name: '@deepseek-ai/dsh-tool-fs'
+
+    - id: tool-fs-search
+      name: '@deepseek-ai/dsh-tool-fs-search'
+      config:
+        sampleOverCapGlobResults: false
+
+# ── background jobs ────────────────────────────────────────────────────────
+
+- id: tool-jobs
+  name: '@deepseek-ai/dsh-tool-jobs'
+
+# ── skills ──────────────────────────────────────────────────────────────────
+
+# `skill-filesystem` is deliberately absent: it discovers skills under local
+# roots on the machine hosting this deployment, which is not where this
+# session's files are. The catalog still carries whatever the deployment
+# registered globally.
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# ── goals and plan mode ─────────────────────────────────────────────────────
+
+- id: tool-goal
+  name: '@deepseek-ai/dsh-tool-goal'
+
+- id: planning
+  name: cordis:group
+  group: true
+  isolate:
+    planMode: true
+  config:
+    - id: plan-mode
+      name: '@deepseek-ai/dsh-plan-mode'
+      config:
+        section: |
+              You are in plan mode. Stay in plan mode until exit_plan_mode succeeds or the user switches the session mode. Imperative language to implement changes means plan the implementation, not execute it. A user's conversational agreement — including an answer confirming something you asked — approves nothing and does not end plan mode; fold the confirmed decision into the plan and submit it through exit_plan_mode.
+
+              Explore first. Use non-mutating reads, searches, static analysis, and checks to ground the plan in the actual repository. Do not edit or write files, change configuration, run formatters or code generation that rewrites tracked files, commit, or otherwise carry out the plan. Prefer existing functions and patterns over new machinery.
+
+              The tool catalog stays the same across modes for request-cache stability. These plan-mode rules override any later tool description or guidance that suggests using mutation tools; those tools remain listed to keep the tool catalog unchanged. Do not use todo_write to track this planning phase: it tracks implementation after an approved plan, while the plan itself belongs in exit_plan_mode.
+
+              Resolve discoverable facts by inspection. Use ask_user_question only for user-owned choices or material ambiguity that inspection cannot answer. Do not ask the user where code lives or how current behavior works when you can find out.
+
+              Make the plan decision-complete: state the goal and success criteria; group implementation changes by subsystem; identify public API, schema, and data-flow changes; cover edge cases, failure modes, tests, acceptance criteria, and explicit assumptions. Keep it concise enough to review but detailed enough that another engineer can implement it without making design decisions.
+
+              When ready, call exit_plan_mode with the complete plan markdown, starting with a # title. Make exit_plan_mode the only and final tool call in that assistant response: it presents the plan for approval, and implementation begins only in a later step after approval. Do not paste the final plan as a plain reply or ask "should I proceed?" through prose or ask_user_question. If review rejects it, incorporate the feedback and present again. If the review channel is unavailable or aborted, stay in plan mode and ask the user to switch modes manually; do not proceed with implementation.
+
+# ── compaction ──────────────────────────────────────────────────────────────
+
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+    toolResultPruner: true
+  config:
+    - id: compaction-basic
+      name: '@deepseek-ai/dsh-compaction-basic'
+
+    - id: command-compact
+      name: '@deepseek-ai/dsh-command-compact'
+
+    - id: tool-result-pruner
+      name: '@deepseek-ai/dsh-compaction-tool-result-pruner'
+      config:
+        thresholdChars: 8192
+        headChars: 4096
+        tailChars: 1024
+
+# ── remaining model-facing rows ─────────────────────────────────────────────
+
+# Delegation is deliberately absent: a subagent is composed from the host's own
+# roster and would run on THIS machine, so a session whose files live on the
+# target cannot hand work to one without silently changing execution world.
+
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'
+
+- id: tool-todo
+  name: '@deepseek-ai/dsh-tool-todo'
+  config:
+    allowParallelInProgress: true
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    fetch: false
+    searchTimeoutMs: 60000

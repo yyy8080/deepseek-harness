@@ -74,6 +74,16 @@ export interface ISessions {
   /** Clear the current selection into the no-session view state. */
   clear(): void
   /**
+   * Start a conversation bound to one connector and select it. The session is
+   * ungrouped by design: its cwd names a directory in the target's world,
+   * which no Workspace on this machine owns.
+   * @param opts - the connector to bind, the composition to build the agent
+   *   from, and the target-world directory the conversation starts in.
+   * @returns the new session id, already selected.
+   * @throws {SessionCreateError} when the host refuses the create or the binding.
+   */
+  startConnectorSession(opts: { connectorId: string; agentPreset: string; cwd: string }): Promise<SessionId>
+  /**
    * Search the Host's visible message-content index. Results stay
    * request-local; the list snapshot remains the metadata authority.
    * @param query - non-blank literal phrase.

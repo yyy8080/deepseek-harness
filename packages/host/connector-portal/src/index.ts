@@ -17,7 +17,8 @@
  * - `GET <basePath>/agent.mjs` serves the bundled agent program. It carries no
  *   secret — it is the same code for every target — and the pack fetches it.
  * - `UPGRADE <basePath>/attach` accepts an agent's reversed connection.
- * - `connectorPortal` answers `issue`, `list`, and `revoke` for the browser.
+ * - `connectorPortal` answers `issue`, `list`, `probe`, and `revoke` for the
+ *   browser.
  *
  * @module @deepseek-ai/dsh-host-connector-portal
  */
@@ -32,6 +33,9 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ConnectorLink } from '@deepseek-ai/dsh-connector'
 import { ConnectorId } from '@deepseek-ai/dsh-connector'
+// Type-only: pulls the agent-preset roster's Context merge (ctx.agentPresets),
+// which the chat-availability report reads through `ctx.get`.
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import {
   CONNECTOR_LABEL_HEADER,
   CONNECTOR_TOKEN_HEADER,
@@ -52,10 +56,13 @@ import {
   renderConnectorPack,
 } from './pack.ts'
 import type {
+  ConnectorChatAvailability,
   ConnectorEnrollmentId,
   ConnectorPackRequest,
   ConnectorPackTicket,
   ConnectorPortalSnapshot,
+  ConnectorProbeReport,
+  ConnectorProbeRequest,
   ConnectorRevokeRequest,
   ConnectorRevokeResult,
 } from './types.ts'
@@ -95,7 +102,28 @@ export interface Config {
    * of the agent points this at that file instead.
    */
   agentProgramPath?: string
+  /**
+   * Agent preset a conversation started from this page is composed from. It
+   * must mount the connector-backed filesystem and subprocess providers, or
+   * the conversation would run on the harness machine while its binding said
+   * otherwise; the portal reports that refusal rather than offering the action.
+   */
+  chatPreset?: string
+  /**
+   * How long one liveness probe waits for the target to answer, in
+   * milliseconds. A target that has stopped answering within it is reported as
+   * unreachable, which is the fact the operator needs.
+   */
+  probeTimeoutMs?: number
 }
+
+/**
+ * The composition row that makes an agent preset connector-backed. A preset
+ * naming it mounts the connector filesystem provider, which is what a session
+ * binding needs to reach the target's files at all; a preset without it
+ * composes the harness machine's own execution world.
+ */
+const CONNECTOR_FILESYSTEM_ROW = '@deepseek-ai/dsh-fs-connector'
 
 /**
  * The agent program a build of this workspace ships. `import.meta.resolve` maps
@@ -139,18 +167,24 @@ export class ConnectorPortal extends TypertRemoteService {
     maxConnectors: z.natural().default(8),
     publicOrigin: z.string(),
     agentProgramPath: z.string().default(BUNDLED_AGENT_PROGRAM),
+    chatPreset: z.string().default('connector'),
+    probeTimeoutMs: z.natural().default(10_000),
   })
 
   private readonly enrollments: ConnectorEnrollments
   private readonly basePath: string
   private readonly publicOrigin: string | undefined
   private readonly agentProgramPath: string
+  private readonly chatPreset: string
+  private readonly probeTimeoutMs: number
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'connectorPortal')
     this.basePath = normalizeBasePath(config.basePath as string)
     this.publicOrigin = config.publicOrigin === undefined ? undefined : assertPackOrigin(config.publicOrigin)
     this.agentProgramPath = config.agentProgramPath as string
+    this.chatPreset = config.chatPreset as string
+    this.probeTimeoutMs = config.probeTimeoutMs as number
     this.enrollments = new ConnectorEnrollments(config.packTtlMs as number, config.maxConnectors as number)
 
     ctx.effect(() => ctx.webServer.register({
@@ -193,12 +227,80 @@ export class ConnectorPortal extends TypertRemoteService {
   }
 
   /**
-   * Read the current enrollment ledger.
-   * @returns every enrollment this deployment holds, oldest first.
+   * Read the current enrollment ledger and whether a machine in it can host a
+   * conversation.
+   * @returns every enrollment this deployment holds, oldest first, plus the
+   *   composition connector conversations would be started from.
    */
   @Remote('list')
-  list(): ConnectorPortalSnapshot {
-    return { enrollments: this.enrollments.view(Date.now()) }
+  async list(): Promise<ConnectorPortalSnapshot> {
+    return { enrollments: this.enrollments.view(Date.now()), chat: await this.chatAvailability() }
+  }
+
+  /**
+   * Prove one attached machine's link is answering right now, by resolving and
+   * inspecting its own working directory across the live connection.
+   *
+   * The ledger's `attached` status records the last completed handshake, which
+   * a target that has since been suspended, killed, or partitioned still
+   * carries; only a completed round trip distinguishes the two.
+   * @param request - the enrollment whose machine to reach.
+   * @returns the round trip's latency and what the target reported, or the
+   *   failure and the action that answers it.
+   */
+  @Remote('probe')
+  async probe(request: ConnectorProbeRequest): Promise<ConnectorProbeReport> {
+    const enrollmentId = request.enrollmentId
+    const probedAt = Date.now()
+    const enrollment = this.enrollments.get(String(enrollmentId))
+    if (enrollment === undefined) {
+      return {
+        alive: false,
+        enrollmentId,
+        probedAt,
+        failure: 'unknown-enrollment',
+        message: 'this machine is no longer enrolled; issue a new connector pack and run it on the target',
+      }
+    }
+    const attachment = enrollment.attachment
+    if (attachment === undefined) {
+      return {
+        alive: false,
+        enrollmentId,
+        probedAt,
+        failure: 'not-attached',
+        message: 'no agent is connected for this machine; re-run the connector pack on the target',
+      }
+    }
+    const started = Date.now()
+    const signal = AbortSignal.timeout(this.probeTimeoutMs)
+    try {
+      const link = await this.ctx.connectors.link({ connectorId: ConnectorId(String(enrollmentId)) })
+      const roundTrip = (async () => {
+        const resolved = await link.files.resolve(attachment.workdir, undefined, signal)
+        return { resolved, info: await link.files.stat(resolved.targetKey, signal) }
+      })()
+      const { resolved: target, info } = await Promise.race([
+        roundTrip,
+        rejectOnAbort(signal, `no answer within ${String(this.probeTimeoutMs)}ms`),
+      ])
+      return {
+        alive: true,
+        enrollmentId,
+        probedAt,
+        latencyMs: Date.now() - started,
+        resolvedWorkdir: target.displayPath,
+        workdirIsDirectory: info?.type === 'directory',
+      }
+    } catch (error: unknown) {
+      return {
+        alive: false,
+        enrollmentId,
+        probedAt,
+        failure: 'link-failed',
+        message: `the connector link did not answer within ${String(this.probeTimeoutMs)}ms (${String(error)}); re-run the connector pack on the target if it has gone offline`,
+      }
+    }
   }
 
   /**
@@ -212,6 +314,45 @@ export class ConnectorPortal extends TypertRemoteService {
     if (enrollment === undefined) return { revoked: false }
     await enrollment.attachment?.release()
     return { revoked: true }
+  }
+
+  /**
+   * Whether a conversation can be started on an attached machine, and from
+   * which composition. Read per call rather than once at load: the roster is a
+   * live directory, so a preset authored or removed while the deployment runs
+   * changes the answer without a restart.
+   */
+  private async chatAvailability(): Promise<ConnectorChatAvailability> {
+    const presets = this.ctx.get('agentPresets')
+    if (presets === undefined) {
+      return {
+        ready: false,
+        reason: 'no-preset-roster',
+        message: 'this deployment composes no agent presets, so a session cannot be given a connector-backed execution world',
+      }
+    }
+    let composition: string
+    try {
+      composition = await presets.read(this.chatPreset)
+    } catch {
+      // `read` rejects for an id no roster entry answers, which is the only
+      // way a configured preset can be absent; a roster whose directory became
+      // unreadable reports the same missing preset, and the operator's action
+      // — restore the preset this deployment names — is the same either way.
+      return {
+        ready: false,
+        reason: 'preset-missing',
+        message: `agent preset ${JSON.stringify(this.chatPreset)} is not in this deployment's roster`,
+      }
+    }
+    if (!composition.includes(CONNECTOR_FILESYSTEM_ROW)) {
+      return {
+        ready: false,
+        reason: 'preset-not-connector-backed',
+        message: `agent preset ${JSON.stringify(this.chatPreset)} composes no ${CONNECTOR_FILESYSTEM_ROW} row, so a session bound to a connector would still run on this machine`,
+      }
+    }
+    return { ready: true, agentPreset: this.chatPreset }
   }
 
   /** Answer one portal request: a pack download, the agent program, or 404. */
@@ -364,6 +505,23 @@ declare module '@deepseek-ai/cordis' {
      */
     'connector-portal/attached'(enrollmentId: ConnectorEnrollmentId): void
   }
+}
+
+/**
+ * A promise that only ever rejects, once `signal` aborts.
+ *
+ * It is raced against a connector call because aborting one does not complete
+ * it: the transport tells the target to cancel and keeps waiting for the
+ * target's answer, which a target that has stopped answering never sends —
+ * the very case a liveness probe exists to report.
+ * @param signal - the abort signal to watch.
+ * @param message - the rejection's message.
+ * @returns a promise rejecting when the signal aborts.
+ */
+function rejectOnAbort(signal: AbortSignal, message: string): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => { reject(new Error(message)) }, { once: true })
+  })
 }
 
 /** Write one short response body. */

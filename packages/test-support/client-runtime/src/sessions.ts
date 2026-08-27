@@ -185,7 +185,7 @@ export class TestSessions implements ISessions {
   /** Calls observed on the service-level face, newest last. */
   readonly calls: {
     method: 'open' | 'openSubagent' | 'setSubagentCatalogOpen' | 'refreshSubagents'
-      | 'clear' | 'search' | 'fork'
+      | 'clear' | 'search' | 'fork' | 'startConnectorSession'
     args: unknown[]
   }[] = []
 
@@ -487,6 +487,18 @@ export class TestSessions implements ISessions {
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId> {
     this.calls.push({ method: 'fork', args: [opts] })
     return Promise.resolve(opts.sessionId)
+  }
+
+  /**
+   * Recorded connector-chat stub: no session materializes (a bench asserting
+   * the whole flow drives the production service; this face proves the call
+   * and the arguments a surface chose).
+   * @param opts - the connector, composition, and target-world directory.
+   * @returns a synthetic id naming the connector the call named.
+   */
+  startConnectorSession(opts: { connectorId: string; agentPreset: string; cwd: string }): Promise<SessionId> {
+    this.calls.push({ method: 'startConnectorSession', args: [opts] })
+    return Promise.resolve(`session-on-${opts.connectorId}` as SessionId)
   }
 
   /**

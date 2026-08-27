@@ -78,6 +78,14 @@ export interface Config {
 export interface ConnectorRequest {
   /** Calling session; its last `connector/bound` event outranks the deployment default. */
   session?: Session
+  /**
+   * One named connector, outranking both the session binding and the
+   * deployment default. It is for a caller that is ABOUT a connector rather
+   * than inside a conversation — a liveness probe naming the machine it
+   * checks — never for a capability provider, which must resolve the calling
+   * session's own execution world.
+   */
+  connectorId?: ConnectorId
 }
 
 /** One registered connector and the memoized link opened for it. */
@@ -193,14 +201,14 @@ export class ConnectorRegistry extends Service {
   }
 
   /**
-   * Resolve which connector one capability call runs on. The session's last
-   * `connector/bound` event outranks the deployment default.
-   * @param request - the calling session, when there is one.
+   * Resolve which connector one capability call runs on. An explicitly named
+   * connector outranks the session's last `connector/bound` event, which in
+   * turn outranks the deployment default.
+   * @param request - the named connector or the calling session, when there is one.
    * @returns the resolved connector id.
    */
   resolveId(request: ConnectorRequest = {}): ConnectorId {
-    const bound = request.session === undefined ? undefined : effectiveConnectorId(request.session.events)
-    const id = bound ?? this.defaultId
+    const id = this.selectId(request)
     if (id === undefined) {
       throw new ConnectorError(
         'no connector is bound to this session and no default connector is configured',
@@ -226,13 +234,19 @@ export class ConnectorRegistry extends Service {
 
   /**
    * Resolve the connector for one call without raising when nothing answers.
-   * @param request - the calling session, when there is one.
+   * @param request - the named connector or the calling session, when there is one.
    * @returns the resolved descriptor, or undefined when none can be resolved.
    */
   tryDescribe(request: ConnectorRequest = {}): ConnectorDescriptor | undefined {
-    const bound = request.session === undefined ? undefined : effectiveConnectorId(request.session.events)
-    const id = bound ?? this.defaultId
+    const id = this.selectId(request)
     return id === undefined ? undefined : this.get(id)
+  }
+
+  /** The connector one request selects, before registration is required. */
+  private selectId(request: ConnectorRequest): ConnectorId | undefined {
+    if (request.connectorId !== undefined) return request.connectorId
+    const bound = request.session === undefined ? undefined : effectiveConnectorId(request.session.events)
+    return bound ?? this.defaultId
   }
 
   /**
