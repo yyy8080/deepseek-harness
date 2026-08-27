@@ -1560,13 +1560,32 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     }
   }
 
-  /** Resolve one requested identity to a live agent, creating or resuming it once. */
+  /**
+   * Resolve one requested identity to a live agent, creating or resuming it once.
+   * @param sessionId - the identity being created or adopted.
+   * @param cwd - the conversation's working directory.
+   * @param options - identity, composition, and where `cwd` lives.
+   * @returns the live agent for that identity.
+   */
   async function ensureSession(
     sessionId: SessionId,
     cwd: string,
-    checkPersistedIdentity: boolean,
-    presetId?: string,
+    options: {
+      /** Whether a persisted session under this id may be resumed. */
+      checkPersistedIdentity: boolean
+      /** Composition to build a newly created agent from. */
+      presetId?: string
+      /**
+       * Whether `cwd` names a directory on the machine hosting this gateway.
+       * A connector-bound conversation's working directory belongs to the
+       * TARGET's filesystem, where this process cannot create it — and
+       * creating the same absolute path here would leave a stray directory
+       * that silently shadows nothing the conversation ever reads.
+       */
+      cwdIsLocal: boolean
+    },
   ): Promise<Agent> {
+    const { checkPersistedIdentity, presetId } = options
     let creation = sessionCreations.get(sessionId)
     if (creation === undefined) {
       creation = (async () => {
@@ -1607,10 +1626,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })).agent
         }
 
-        try {
-          await mkdir(cwd, { recursive: true })
-        } catch (error: unknown) {
-          throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
+        if (options.cwdIsLocal) {
+          try {
+            await mkdir(cwd, { recursive: true })
+          } catch (error: unknown) {
+            throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
+          }
         }
         const composition = await composeAgent(presetId)
         return (await ctx.agents.create({
@@ -2115,7 +2136,11 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         let agent: Agent
         try {
-          agent = await ensureSession(sessionId, cwd, request.payload.sessionId !== undefined, requestedPreset)
+          agent = await ensureSession(sessionId, cwd, {
+            checkPersistedIdentity: request.payload.sessionId !== undefined,
+            ...requestedPreset === undefined ? {} : { presetId: requestedPreset },
+            cwdIsLocal: requestedConnector === undefined,
+          })
         } catch (error: unknown) {
           if (error instanceof AgentPresetConflict) {
             return err(request, {

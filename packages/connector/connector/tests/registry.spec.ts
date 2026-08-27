@@ -118,6 +118,23 @@ describe('resolution', () => {
     expect(ctx.connectors.describe({ session: active })).toEqual(bound)
   })
 
+  it('lets a named connector outrank both the session binding and the default', async () => {
+    const ctx = await mounted({ default: 'build-linux' })
+    const fallback = descriptor('build-linux')
+    const bound = descriptor('lab-windows', 'windows', String.raw`C:\work`)
+    const named = descriptor('lab-macos', 'macos', '/Users/lab')
+    for (const target of [fallback, bound, named]) {
+      ctx.connectors.register(target, async () => stubLink(target))
+    }
+    const active = session('bound')
+    bindSessionConnector(active, ConnectorId('lab-windows'))
+
+    // A liveness probe names the machine it checks; it must not be answered by
+    // whichever connector the caller's own conversation happens to run on.
+    expect(ctx.connectors.resolveId({ session: active, connectorId: ConnectorId('lab-macos') })).toBe('lab-macos')
+    expect(ctx.connectors.tryDescribe({ connectorId: ConnectorId('lab-macos') })).toEqual(named)
+  })
+
   it('fails loud when the resolved id names no registration', async () => {
     const ctx = await mounted({ default: 'missing' })
 

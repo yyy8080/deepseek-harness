@@ -520,6 +520,49 @@ describe('create', () => {
   })
 })
 
+describe('startConnectorSession', () => {
+  it('creates the conversation on the named machine and selects it', async () => {
+    const b = bench()
+    b.api.onCreate = () => Promise.resolve(ok({ sessionId: sid('on-target') }))
+
+    const started = await b.svc.startConnectorSession({
+      connectorId: 'build-box',
+      agentPreset: 'connector',
+      cwd: '/srv/work',
+    })
+
+    expect(started).toBe('on-target')
+    // The cwd is the TARGET's directory and no Workspace is named: a
+    // Workspace is a directory on the machine hosting the deployment.
+    expect(b.api.callsOf('session.create'))
+      .toEqual([{ cwd: '/srv/work', agentPreset: 'connector', connectorId: 'build-box' }])
+    expect(b.svc.list.getSnapshot().current).toBe(sid('on-target'))
+  })
+
+  it('reports a host that refused the binding without selecting anything', async () => {
+    const b = bench()
+    b.api.onCreate = () => Promise.resolve({
+      rpcId: 'refused' as never,
+      result: {
+        ok: false,
+        error: {
+          code: 'connector-not-registered',
+          message: 'connector "build-box" is not registered on this deployment',
+          details: { connectorId: 'build-box', available: [] },
+        },
+      },
+    } as never)
+
+    const failure = await b.svc.startConnectorSession({
+      connectorId: 'build-box', agentPreset: 'connector', cwd: '/srv/work',
+    }).catch((error: unknown) => error)
+
+    expect(failure).toBeInstanceOf(SessionCreateError)
+    expect(failure).toMatchObject({ rpcError: { code: 'connector-not-registered' } })
+    expect(b.svc.list.getSnapshot().current).toBeUndefined()
+  })
+})
+
 describe('fork', () => {
   it.each([
     ['Roadmap', 'Roadmap (1)'],

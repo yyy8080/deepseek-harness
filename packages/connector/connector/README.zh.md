@@ -16,6 +16,7 @@ connector 能力 seam（`ctx.connectors`）的 Service Definition。一个 conne
 
 - **注册表** —— `register(descriptor, open)` 通过 `ctx.effect` 贡献一个 connector 并返回其 disposer；重复 id 会抛错，因为把两台机器命名为同一名称的部署无法解析。`list`、`get`、`describe` 和 `tryDescribe` 读取这些注册项。
 - **会话绑定** —— `bindSessionConnector(session, id)` 追加一个 `connector/bound` 事件；`effectiveConnectorId(events)` 把日志折叠回最后一次绑定。会话日志即存储，因此绑定通过重放在重启后依然有效，且两次会话永远不会共享目标。该事件仅记录于日志，与 `sandbox/mode` 一样：持久且可重放，永不进入模型 transcript（对话记录）。
+- **解析顺序** —— 指名 `connectorId` 的请求压过调用会话的绑定，绑定又压过 `default`。指名的用法留给那些谈论某个 connector、而非身处某场对话之中的调用方，例如入口的测活；能力提供方始终解析调用会话自己的执行世界。
 - **链路生命周期** —— `link(request)` 在首次使用时打开该 connector 的链路，并为其后所有调用方 memo（记忆化）该链路；打开失败不会被 memo，因此下一次操作会重试。资源释放会关闭注册表打开的链路，`connector/link-opened` 与 `connector/link-closed` 发布这些状态变化。
 - **目标方言** —— `connectorPathModule(os)` 为 Windows 目标返回 Node 的 `win32` 路径模块，其余返回 `posix`。connector 支撑的提供方执行的所有同步路径计算都运行在目标的方言下，而非 harness 宿主机的方言。
 - **wire 协议** —— [`./protocol`](src/protocol.ts) 定义以换行分隔的 JSON 帧：携带协议修订号的 `hello`/`ready` 握手、相互关联的 `call`/`result`/`error` 帧、`cancel`，以及由服务端发起、描述某个进程输出、关闭、失败与进程树退出的 `event` 帧。帧在到达时被校验，并限制在 64 MiB 以内，因为在握手完成前对端是远程且未经认证的。agent 与每个客户端 transport 都通过这一个模块解码。

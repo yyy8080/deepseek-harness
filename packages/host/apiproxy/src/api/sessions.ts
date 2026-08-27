@@ -268,7 +268,9 @@ export interface SessionsApi {
    * connector must be registered when the call arrives, else
    * `connector-not-registered` and no session is created or bound. Reaching
    * the target also needs an agent preset composing the connector-backed
-   * providers, which `connectorPortal.list` reports.
+   * providers, which `connectorPortal.list` reports. `cwd` is then read as a
+   * path in the TARGET's filesystem and recorded verbatim: this machine
+   * neither creates nor validates it.
    */
   create(request: RpcRequest<{
     workspaceId?: WorkspaceId

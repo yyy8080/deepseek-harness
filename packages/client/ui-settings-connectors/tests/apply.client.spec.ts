@@ -1,6 +1,7 @@
 /**
  * Connectors section registration: the slot declaration it waits for, the
- * locale-following nav label, and the three Remote calls it hands the page.
+ * locale-following nav label, the Remote calls it hands the page, and the
+ * conversation entry it only offers where a sessions domain is mounted.
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
@@ -36,7 +37,30 @@ function stubBrowser(): { write: ReturnType<typeof vi.fn> } {
   return { write }
 }
 
-async function bench() {
+const SNAPSHOT = { enrollments: [], chat: { ready: true, agentPreset: 'connector' } }
+
+const REPORT = {
+  alive: true,
+  enrollmentId: 'enrol-1',
+  probedAt: 0,
+  latencyMs: 9,
+  resolvedWorkdir: '/srv/work',
+  workdirIsDirectory: true,
+}
+
+/** One attached machine, as the page hands it to the conversation entry. */
+const MACHINE = {
+  enrollmentId: 'enrol-1',
+  connectorId: 'enrol-1',
+  os: 'linux',
+  status: 'attached',
+  label: 'build-box',
+  workdir: '/srv/work',
+  issuedAt: 0,
+  expiresAt: 0,
+} as unknown as Parameters<NonNullable<ConnectorsSectionInjected['startChat']>>[0]
+
+async function bench(options: { sessions?: boolean } = {}) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -52,11 +76,14 @@ async function bench() {
   new RemoteService(ctx)
   const portal = {
     issue: vi.fn<() => Promise<Answer<typeof TICKET>>>().mockResolvedValue({ ok: true, value: TICKET }),
-    list: vi.fn<() => Promise<Answer<{ enrollments: [] }>>>().mockResolvedValue({ ok: true, value: { enrollments: [] } }),
+    list: vi.fn<() => Promise<Answer<typeof SNAPSHOT>>>().mockResolvedValue({ ok: true, value: SNAPSHOT }),
     revoke: vi.fn<() => Promise<Answer<{ revoked: boolean }>>>().mockResolvedValue({ ok: true, value: { revoked: true } }),
+    probe: vi.fn<() => Promise<Answer<typeof REPORT>>>().mockResolvedValue({ ok: true, value: REPORT }),
   }
   ctx.provide('remote.connectorPortal', portal)
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, portal }
+  const startConnectorSession = vi.fn<(opts: unknown) => Promise<string>>().mockResolvedValue('session-1')
+  if (options.sessions === true) ctx.provide('sessions', { startConnectorSession } as never)
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, portal, startConnectorSession }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -114,11 +141,36 @@ describe('ui-settings-connectors apply', () => {
 
     const face = injected(b.slots)
     await expect(face.issue('linux')).resolves.toEqual(TICKET)
-    await expect(face.list()).resolves.toEqual({ enrollments: [] })
+    await expect(face.list()).resolves.toEqual(SNAPSHOT)
     await expect(face.revoke('enrol-1' as never)).resolves.toBeUndefined()
+    await expect(face.probe('enrol-1' as never)).resolves.toEqual(REPORT)
 
     expect(b.portal.issue).toHaveBeenCalledWith({ os: 'linux' })
     expect(b.portal.revoke).toHaveBeenCalledWith({ enrollmentId: 'enrol-1' })
+    expect(b.portal.probe).toHaveBeenCalledWith({ enrollmentId: 'enrol-1' })
+    await b.ctx.fiber.dispose()
+  })
+
+  it('offers no conversation entry where no sessions domain is mounted', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    stubBrowser()
+
+    expect(injected(b.slots).startChat).toBeUndefined()
+    await b.ctx.fiber.dispose()
+  })
+
+  it('starts a conversation on the machine in the target\u2019s own working directory', async () => {
+    const b = await bench({ sessions: true })
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    stubBrowser()
+
+    await injected(b.slots).startChat?.(MACHINE, 'connector')
+
+    expect(b.startConnectorSession)
+      .toHaveBeenCalledWith({ connectorId: 'enrol-1', agentPreset: 'connector', cwd: '/srv/work' })
     await b.ctx.fiber.dispose()
   })
 
@@ -126,6 +178,7 @@ describe('ui-settings-connectors apply', () => {
     ['issue', (face: ConnectorsSectionInjected) => face.issue('linux')],
     ['list', (face: ConnectorsSectionInjected) => face.list()],
     ['revoke', (face: ConnectorsSectionInjected) => face.revoke('enrol-1' as never)],
+    ['probe', (face: ConnectorsSectionInjected) => face.probe('enrol-1' as never)],
   ])('names %s when the portal refuses it', async (method, call) => {
     const b = await bench()
     declare(b.slots)

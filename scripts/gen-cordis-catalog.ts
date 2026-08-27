@@ -318,6 +318,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ConnectorPackRequest: 'connector.md',
   ConnectorPackTicket: 'connector.md',
   ConnectorPortalSnapshot: 'connector.md',
+  ConnectorProbeReport: 'connector.md',
+  ConnectorProbeRequest: 'connector.md',
   ConnectorRequest: 'connector.md',
   ConnectorRevokeRequest: 'connector.md',
   ConnectorRevokeResult: 'connector.md',
