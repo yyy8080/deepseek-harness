@@ -1,0 +1,35 @@
+{
+  "name": "dsh-plugin-hello-marketplace",
+  "description": "Sample marketplace plugin: a profile bundle that inserts one greeting row",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "license": "MIT",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "plugin": {
+      "displayName": "Hello Marketplace",
+      "description": "A minimal profile bundle that mounts one greeting plugin, used to exercise the marketplace install flow end to end.",
+      "publisher": "DeepSeek Harness examples",
+      "homepage": "https://github.com/deepseek-ai/deepseek-harness/tree/master/examples/marketplace",
+      "capabilities": {
+        "tools": [],
+        "filesystem": "none",
+        "network": "none",
+        "subprocess": false
+      }
+    }
+  }
+}
