@@ -40,13 +40,21 @@ Status: implemented
 
 有三行是刻意缺席的。委派会从**宿主**的名册里组合出子 agent，于是 subagent 会悄悄跑在错误的机器上。`skill-filesystem` 在本地根目录下发现技能，而那不是这场会话的文件所在之处。`bash-local` 上没有施加沙箱，因为宿主机的约束机制对一台通过链路抵达的目标什么也约束不了；一场连接器会话就是对目标的 shell 访问权，而这在登记该机器时就已经授予了。
 
+### 绑定就是连接器对话手里替代工作区的那样东西
+
+输入框在选定工作区之前拒绝输入，对每一场文件就在本机的对话来说，这道门槛都是对的。连接器对话没有本地工作区，也永远拿不到一个，于是照原样的门槛会让新会话永远不可用——而这恰恰是快捷开对话要避免的那件事。
+
+因此绑定被送到客户端，顶替它所取代的那个工作区。`session.create` 回显 `connectorId`，`session.list` 的行与 `host/session-added` 帧为每一场已接入的会话报出它，而 hero 上的 chip 渲染成只读的 `connector` 变体，写出目标与它的目录，而不是工作区选择器。这里没有可选的东西：任何本地工作区都替代不了这场对话所绑定的那台机器。
+
+客户端对这个字段采用只填补、而非最新者胜的合并方式，这与它旁边的 preset 不同：冷会话的行是由会话头索引投影出来的，其中不携带绑定，所以最新者胜的合并会在下一次刷新时把已知的连接器丢掉。
+
 ### 可用性是被检查出来的，不是被假定的
 
 `connectorPortal.list()` 报出 `chat: ConnectorChatAvailability`。只有当 preset 名册里确实有配置的 `chatPreset`，**并且**该 preset 的组合文本真的挂载了 `@deepseek-ai/dsh-fs-connector` 时，它才是 `ready`；否则它携带一个拒绝原因（`no-preset-service`、`preset-missing`、`preset-not-connector`）与一条消息。移除了该 preset、或把它改成了本地版的部署，会在页面上直说，而不是悄悄把对话跑在宿主机上——那是这个特性唯一可能造成、而用户又不会察觉的失败。
 
 ## 涉及的文件
 
-`packages/host/connector-portal` 拥有 `probe` 与 `chatAvailability`；`packages/host/apiproxy` 拥有 `session.create` 上的 `connectorId`；`packages/connector/connector` 拥有 `ConnectorRequest` 的新字段；`packages/client/ui-settings-connectors` 拥有两个按钮；`packages/client/runtime` 拥有 `sessions.startConnectorSession`；`apps/cli/config/agent-presets/connector` 是那份组合，`packages/bundle/web-app/cordis.patch.yml` 指名了它。
+`packages/host/connector-portal` 拥有 `probe` 与 `chatAvailability`；`packages/host/apiproxy` 拥有 `session.create` 上的 `connectorId`、摘要行以及会话新增帧；`packages/connector/connector` 拥有 `ConnectorRequest` 的新字段；`packages/client/ui-settings-connectors` 拥有两个按钮；`packages/client/runtime` 拥有 `sessions.startConnectorSession` 与摘要字段；`packages/client/ui-conversation` 拥有那个只读 chip 以及被它保持可用的输入框；`apps/cli/config/agent-presets/connector` 是那份组合，`packages/bundle/web-app/cordis.patch.yml` 指名了它。
 
 ## 已考虑的备选方案
 
@@ -70,12 +78,14 @@ Status: implemented
 
 ## 测试
 
-包内用例覆盖门户探活的四种结果，都对着一条真实链路，其中包括一台握着连接却停止回答的目标——正是它钉住了那个期限，因为没有那场 race，这条用例是挂起而不是失败。网关用例覆盖绑定、目标侧 `cwd` 下被跳过的本地 `mkdir`，以及两条拒绝路径。组件测试把两个按钮走过成功、宿主拒绝与动作被扣下这几种状态。装配后的 Web 组合 e2e 用 `connector` preset 组合出会话，断言该会话的 `fs` 与 `subprocess` 是连接器版的类，而宿主平面与它旁边的一场 `standard` 会话都毫发无损。
+对话骨架的用例覆盖一场已绑定的会话在没有工作区的情况下也能撰写消息，连同那个 chip；客户端会话管理器的用例覆盖创建回显与帧合并。包内用例覆盖门户探活的四种结果，都对着一条真实链路，其中包括一台握着连接却停止回答的目标——正是它钉住了那个期限，因为没有那场 race，这条用例是挂起而不是失败。网关用例覆盖绑定、目标侧 `cwd` 下被跳过的本地 `mkdir`，以及两条拒绝路径。组件测试把两个按钮走过成功、宿主拒绝与动作被扣下这几种状态。装配后的 Web 组合 e2e 用 `connector` preset 组合出会话，断言该会话的 `fs` 与 `subprocess` 是连接器版的类，而宿主平面与它旁边的一场 `standard` 会话都毫发无损。
 
 ## 后果
 
 连接器页面现在能回答这两个问题了，而第二个问题对部署方零成本——preset 随部署附带，web bundle 指名了它。
 
 一场连接器对话没有工作区。它的 `cwd` 是目标的 workdir，而目录选择器、项目根目录，以及其余一切以本地路径为键的东西都不适用于它。会话本身可用；围绕它的工作区便利设施是缺席，而不是出错。
+
+由于绑定只活在日志里，一次不读日志的列表就报不出它。宿主尚未接入的会话——重启之后、被打开之前——列出来时不带 `connectorId`，于是其中**空白**的那一场会退回到工作区选择器的姿态，直到它被接入。已经跑过的绑定对话早已越过 hero 阶段，不受影响。要堵上这一点就得给绑定在会话头上再立一个权威，而下面那条备选方案出于更强的理由否决了它。
 
 探活测的是某一时刻的一次往返。此刻能回答的机器，下一秒就可能消失，所以结果是作为一次带时间戳的测量呈现的，而不是让那一行采纳为自己的状态。

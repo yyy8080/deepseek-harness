@@ -143,6 +143,8 @@ type ConnectorChatAvailability =
 
 `session.create` is where the binding is written: it verifies the registration before creating anything, appends the one `connector/bound` event after publication, and treats the request's `cwd` as a path in the target's world rather than one to create here.
 
+The binding travels back out to clients on the create result, on attached `session.list` rows, and on `host/session-added`. A conversation that reports one belongs to no local Workspace — its directory is the target's — so the browser names the machine in place of the workspace chip instead of asking for a pick that could not apply.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

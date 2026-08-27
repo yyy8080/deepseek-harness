@@ -143,6 +143,8 @@ type ConnectorChatAvailability =
 
 绑定写在 `session.create` 这一步：它先核对注册项再创建任何东西，在发布之后追加那唯一一个 `connector/bound` 事件，并把请求里的 `cwd` 当作目标世界里的路径，而不是要在本机创建的目录。
 
+绑定会随创建结果、已接入的 `session.list` 行以及 `host/session-added` 一并回到客户端。报出绑定的对话不属于任何本地 Workspace——它的目录属于目标——因此浏览器在工作区 chip 的位置写出那台机器，而不是索要一次根本不适用的选择。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>

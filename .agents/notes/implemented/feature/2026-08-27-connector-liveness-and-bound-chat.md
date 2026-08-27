@@ -40,13 +40,21 @@ The shipped `connector` preset is `standard` with one group changed. An `isolate
 
 Three rows are deliberately absent. Delegation composes a child from the **host's** roster, so a subagent would silently run on the wrong machine. `skill-filesystem` discovers skills under local roots, which is not where this session's files are. Sandboxing is not applied to `bash-local`, because a host-machine confinement mechanism confines nothing on a target reached over a link; a connector session is shell access to the target, which enrolling the machine already granted.
 
+### The binding is what a connector conversation has instead of a workspace
+
+The composer refuses input until a workspace is chosen, and that gate is right for every conversation whose files are on this machine. A connector conversation has no local workspace and can never acquire one, so the gate as written left the new session permanently unusable — the one thing the quick-start action exists to avoid.
+
+The binding is therefore carried to the client and stands in for the workspace it replaces. `session.create` echoes `connectorId`, `session.list` rows and the `host/session-added` frame report it for every attached session, and the hero chip renders a read-only `connector` variant naming the target and its directory instead of the workspace picker. There is nothing to pick: no local workspace can be substituted for a machine the conversation is bound to.
+
+The client merges the field fill-only rather than newest-wins, unlike the preset beside it: a cold row is projected from the header index, which does not carry the binding, so a newest-wins merge would drop a known connector on the next refresh.
+
 ### Availability is checked, not assumed
 
 `connectorPortal.list()` reports `chat: ConnectorChatAvailability`. It is `ready` only when the preset roster actually holds the configured `chatPreset` **and** that preset's composition text mounts `@deepseek-ai/dsh-fs-connector`; otherwise it carries a refusal reason (`no-preset-service`, `preset-missing`, `preset-not-connector`) and a message. A deployment that removed the preset, or edited it into a local one, says so on the page instead of quietly running the conversation on the harness host — the single failure this feature could produce that a user would not notice.
 
 ## Files
 
-`packages/host/connector-portal` owns `probe` and `chatAvailability`; `packages/host/apiproxy` owns `connectorId` on `session.create`; `packages/connector/connector` owns the `ConnectorRequest` field; `packages/client/ui-settings-connectors` owns both buttons; `packages/client/runtime` owns `sessions.startConnectorSession`; `apps/cli/config/agent-presets/connector` is the composition, and `packages/bundle/web-app/cordis.patch.yml` names it.
+`packages/host/connector-portal` owns `probe` and `chatAvailability`; `packages/host/apiproxy` owns `connectorId` on `session.create`, the summary row, and the session-added frame; `packages/connector/connector` owns the `ConnectorRequest` field; `packages/client/ui-settings-connectors` owns both buttons; `packages/client/runtime` owns `sessions.startConnectorSession` and the summary field; `packages/client/ui-conversation` owns the read-only chip and the composer it keeps live; `apps/cli/config/agent-presets/connector` is the composition, and `packages/bundle/web-app/cordis.patch.yml` names it.
 
 ## Alternatives considered
 
@@ -70,12 +78,14 @@ Three rows are deliberately absent. Delegation composes a child from the **host'
 
 ## Testing
 
-Package suites cover the portal's four probe outcomes against a real link, including a target that holds the connection but stops answering — which is what pins the deadline, since without the race that test hangs rather than fails. The gateway suite covers binding, the skipped local `mkdir` for a target-side `cwd`, and both refusal paths. Component tests drive the two buttons through success, host refusal, and the withheld-action states. The assembled Web composition e2e composes the `connector` preset and asserts the session's `fs` and `subprocess` are the connector-backed classes while the host plane and a `standard` session beside it are untouched.
+The conversation skeleton's suite covers a bound session composing without a workspace, chip and all; the client session manager's covers the create echo and the frame merge. Package suites cover the portal's four probe outcomes against a real link, including a target that holds the connection but stops answering — which is what pins the deadline, since without the race that test hangs rather than fails. The gateway suite covers binding, the skipped local `mkdir` for a target-side `cwd`, and both refusal paths. Component tests drive the two buttons through success, host refusal, and the withheld-action states. The assembled Web composition e2e composes the `connector` preset and asserts the session's `fs` and `subprocess` are the connector-backed classes while the host plane and a `standard` session beside it are untouched.
 
 ## Consequences
 
 The Connectors page can now answer both questions, and the second one costs a deployment nothing to enable — the preset ships and the web bundle names it.
 
 A connector conversation has no workspace. Its `cwd` is the target's workdir, and the directory picker, project roots, and everything else keyed to a local path do not apply to it. The session works; the workspace affordances around it are absent rather than wrong.
+
+Because the binding lives only in the log, a listing that never reads the log cannot report it. A session the Host has not attached — after a restart, before it is opened — lists without a `connectorId`, so a **blank** one of those falls back to the workspace-picker posture until it is attached. A bound conversation that has already run is past the hero phase and unaffected. Closing this would mean giving the binding a second authority on the header, which the alternative below rejects for a stronger reason.
 
 The probe measures one round trip at one moment. A machine that answers now can be gone a second later, which is why the result is presented as a timestamped measurement rather than a status the row adopts.

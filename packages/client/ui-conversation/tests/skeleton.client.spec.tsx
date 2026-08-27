@@ -103,6 +103,8 @@ function mount(
     composerBlock?: { reason: string }
     /** Bind the selected session's execution world to this connector. */
     connectorId?: string
+    /** Drop the session's working directory (a row the host has no cwd for). */
+    omitCwd?: boolean
     /** Mutable view ledger used by registration-order regressions. */
     viewTabs?: ViewTab[]
   } = {},
@@ -116,7 +118,8 @@ function mount(
   }
   const childRow = {
     id: SID, displayTitle: 'Child', parentId: options.nestedSubagent === true ? parent : root,
-    cwd: '/projects/one', running: false, blank: options.summaryBlank ?? false, updatedAt: 3,
+    ...(options.omitCwd === true ? {} : { cwd: '/projects/one' }),
+    running: false, blank: options.summaryBlank ?? false, updatedAt: 3,
     ...(options.summaryOrigin === undefined ? {} : { origin: options.summaryOrigin }),
     ...(options.connectorId === undefined ? {} : { connectorId: options.connectorId }),
   }
@@ -452,6 +455,17 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.queryByRole('button', { name: '选择工作区' })).toBeNull()
     fireEvent.click(b.view.getByRole('button', { name: /已连接的机器/ }))
     expect(b.pickerOwner()).toBeUndefined()
+  })
+
+  it('names the connector alone when the row carries no directory', () => {
+    const b = mount(
+      conversationSnapshot({ composerPhase: 'blank', blank: true }),
+      [],
+      undefined,
+      { summaryBlank: true, connectorId: 'build-box', omitCwd: true },
+    )
+    expect(b.view.getByText('build-box')).toBeTruthy()
+    expect((b.view.getByRole('textbox') as HTMLTextAreaElement).readOnly).toBe(false)
   })
 
   it('settling phase: a summary that does not prove the session blank hides the composer while it opens', () => {
