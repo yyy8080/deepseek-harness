@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ConnectorsSection, installCommand } from '../src/client/ConnectorsSection.tsx'
-import type { ConnectorsSectionInjected } from '../src/client/ConnectorsSection.tsx'
+import type { ConnectorsSectionInjected, ConnectorsSectionProps } from '../src/client/ConnectorsSection.tsx'
 import { en } from '../src/client/locales.ts'
 import type { ConnectorsLocaleKey } from '../src/client/locales.ts'
 
@@ -69,8 +69,12 @@ function mount(overrides: Partial<ConnectorsSectionInjected> = {}) {
       en[key].replace(/\{(\w+)\}/g, (_match, name: string) => String(params?.[name])),
     ...overrides,
   }
-  const view = render(<ConnectorsSection {...face} />)
-  return Object.assign(face, { view })
+  // `close` is the shell-owned section affordance (SettingsSectionOwnerProps);
+  // the rest of that runtime share is the outlet's, and no test drives it.
+  const close = vi.fn<() => void>()
+  const props = { ...face, close } as unknown as ConnectorsSectionProps
+  const view = render(<ConnectorsSection {...props} />)
+  return Object.assign(face, { view, close })
 }
 
 /** A promise the test settles by hand. */
@@ -357,27 +361,31 @@ describe('the liveness check', () => {
 })
 
 describe('starting a chat on a machine', () => {
-  it('starts one on the composition the deployment reported, and clears the row', async () => {
+  it('starts one on the composition the deployment reported, and leaves Settings', async () => {
     const startChat = vi.fn<NonNullable<ConnectorsSectionInjected['startChat']>>().mockResolvedValue(undefined)
-    mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])), startChat })
+    const page = mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])), startChat })
     await waitFor(() => { expect(screen.queryByText(en.startChat)).not.toBeNull() })
 
     fireEvent.click(screen.getByText(en.startChat))
 
     await waitFor(() => { expect(startChat).toHaveBeenCalledTimes(1) })
     expect(startChat).toHaveBeenCalledWith(expect.objectContaining({ connectorId: 'enrol-1' }), 'connector')
-    await waitFor(() => { expect(screen.queryByText(en.chatStarting)).toBeNull() })
+    // The conversation opens behind this panel, so a Settings that stays up
+    // leaves the user looking at the page they just left.
+    await waitFor(() => { expect(page.close).toHaveBeenCalledTimes(1) })
+    expect(screen.queryByText(en.chatStarting)).toBeNull()
   })
 
-  it('reports a session the host refused to create', async () => {
+  it('reports a session the host refused to create, and stays', async () => {
     const startChat = vi.fn<NonNullable<ConnectorsSectionInjected['startChat']>>()
       .mockRejectedValue(new Error('connector-not-registered'))
-    mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])), startChat })
+    const page = mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])), startChat })
     await waitFor(() => { expect(screen.queryByText(en.startChat)).not.toBeNull() })
 
     fireEvent.click(screen.getByText(en.startChat))
 
     await waitFor(() => { expect(screen.queryByText(/connector-not-registered/)).not.toBeNull() })
+    expect(page.close).not.toHaveBeenCalled()
   })
 
   it('withholds the action and explains itself when the deployment cannot bind a session', async () => {

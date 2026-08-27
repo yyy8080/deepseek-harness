@@ -24,7 +24,7 @@ import type {
   ConnectorPortalSnapshot,
   ConnectorProbeReport,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectorsLocaleKey } from './locales.ts'
 import css from './ConnectorsSection.module.css'
 
@@ -61,7 +61,9 @@ export interface ConnectorsSectionInjected {
 }
 
 /** Props delivered by the settings slot outlet. */
-export type ConnectorsSectionProps = Partial<InjectFace<ConnectorsSectionInjected>>
+export type ConnectorsSectionProps =
+  PropsRuntime<'settings.section'>
+  & Partial<InjectFace<ConnectorsSectionInjected>>
 
 type LedgerState =
   | { readonly status: 'loading' }
@@ -229,9 +231,11 @@ export function ConnectorsSection(props: ConnectorsSectionProps): ReactNode {
     setRowState(setChats, key, { phase: 'starting' })
     void startChat(enrollment, agentPreset).then(
       () => {
-        // Navigation leaves this page; clearing keeps a reopened Settings from
-        // showing a stale "starting" row.
+        // The conversation is already open behind this panel, so Settings has
+        // to get out of the way for the user to reach it. Clearing the row
+        // first keeps a reopened Settings from showing a stale "starting".
         if (mounted.current) setRowState(setChats, key, undefined)
+        props.close()
       },
       (error: unknown) => {
         if (mounted.current) setRowState(setChats, key, { phase: 'failed', message: String(error) })
