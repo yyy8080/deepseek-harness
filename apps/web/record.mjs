@@ -9,7 +9,7 @@ await context.route('**', route => route.request().url().startsWith(ORIGIN) ? ro
 const page = await context.newPage()
 const shot = (name) => page.screenshot({ path: `${DIR}/${name}.png`, timeout: 20000 })
 
-await page.goto(ORIGIN, { waitUntil: 'domcontentloaded' })
+await page.goto(ORIGIN, { waitUntil: 'domcontentloaded', timeout: 60000 })
 await page.waitForTimeout(5000)
 await page.getByText('设置', { exact: true }).first().click()
 await page.waitForTimeout(1500)
