@@ -137,8 +137,8 @@ export function ConnectorsSection(props: ConnectorsSectionProps): ReactNode {
   const [issueFailed, setIssueFailed] = useState(false)
   const [copied, setCopied] = useState(false)
   const [ledger, setLedger] = useState<LedgerState>({ status: 'loading' })
-  const [probes, setProbes] = useState<Readonly<Record<string, ProbeState>>>({})
-  const [chats, setChats] = useState<Readonly<Record<string, ChatState>>>({})
+  const [probes, setProbes] = useState<ReadonlyMap<string, ProbeState>>(new Map())
+  const [chats, setChats] = useState<ReadonlyMap<string, ChatState>>(new Map())
   const mounted = useRef(true)
 
   useEffect(() => () => { mounted.current = false }, [])
@@ -192,14 +192,14 @@ export function ConnectorsSection(props: ConnectorsSectionProps): ReactNode {
   }
 
   const setRowState = <T,>(
-    apply: (updater: (previous: Readonly<Record<string, T>>) => Readonly<Record<string, T>>) => void,
+    apply: (updater: (previous: ReadonlyMap<string, T>) => ReadonlyMap<string, T>) => void,
     key: string,
     value: T | undefined,
   ): void => {
     apply((previous) => {
-      const next = { ...previous }
-      if (value === undefined) delete next[key]
-      else next[key] = value
+      const next = new Map(previous)
+      if (value === undefined) next.delete(key)
+      else next.set(key, value)
       return next
     })
   }
@@ -299,8 +299,8 @@ export function ConnectorsSection(props: ConnectorsSectionProps): ReactNode {
         <ul className={css.machines}>
           {ledger.enrollments.map((enrollment) => {
             const key = String(enrollment.enrollmentId)
-            const probeState = probes[key]
-            const chatState = chats[key]
+            const probeState = probes.get(key)
+            const chatState = chats.get(key)
             const attached = enrollment.status === 'attached'
             const chat = ledger.chat
             return (

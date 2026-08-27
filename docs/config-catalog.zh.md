@@ -955,10 +955,23 @@ export interface Config {
    * of the agent points this at that file instead.
    */
   agentProgramPath?: string
+  /**
+   * Agent preset a conversation started from this page is composed from. It
+   * must mount the connector-backed filesystem and subprocess providers, or
+   * the conversation would run on the harness machine while its binding said
+   * otherwise; the portal reports that refusal rather than offering the action.
+   */
+  chatPreset?: string
+  /**
+   * How long one liveness probe waits for the target to answer, in
+   * milliseconds. A target that has stopped answering within it is reported as
+   * unreachable, which is the fact the operator needs.
+   */
+  probeTimeoutMs?: number
 }
 ```
 
-来源：[`packages/host/connector-portal/src/index.ts:77`](../packages/host/connector-portal/src/index.ts)
+来源：[`packages/host/connector-portal/src/index.ts:84`](../packages/host/connector-portal/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 

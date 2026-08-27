@@ -12,7 +12,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentFactory } from '@deepseek-ai/dsh-agent'
 import ConnectorRegistry, { ConnectorId, effectiveConnectorId } from '@deepseek-ai/dsh-connector'
-import type { ConnectorDescriptor, ConnectorLink } from '@deepseek-ai/dsh-connector'
+import type { ConnectorDescriptor } from '@deepseek-ai/dsh-connector'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
@@ -72,7 +72,7 @@ async function harness(registered: readonly string[] = []) {
     const target = descriptor(id)
     // The gateway never opens a link — it verifies the registration and writes
     // the binding — so an opener that would reject proves it stays unopened.
-    ctx.connectors.register(target, () => Promise.reject(new Error('the gateway must not open a link')) as Promise<ConnectorLink>)
+    ctx.connectors.register(target, () => Promise.reject(new Error('the gateway must not open a link')))
   }
 
   const factory: AgentFactory = {
@@ -161,7 +161,7 @@ describe('session.create with a connector', () => {
     ctx.agents.setFactory({
       createAgent: () => { throw new Error('no session may be created') },
       resume: () => { throw new Error('no session may be resumed') },
-    } as unknown as AgentFactory)
+    })
     const api = createApiProxy(ctx, {
       defaultModelSelection: () => ({ provider: 'test', model: 'test-model' }),
       cwd: realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-connector-'))),

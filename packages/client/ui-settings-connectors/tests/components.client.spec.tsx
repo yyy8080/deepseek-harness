@@ -27,7 +27,6 @@ const TICKET = {
 
 type Snapshot = Awaited<ReturnType<ConnectorsSectionInjected['list']>>
 type Enrollment = Snapshot['enrollments'][number]
-type Report = Awaited<ReturnType<ConnectorsSectionInjected['probe']>>
 
 /** The chat availability a deployment composed for connector work reports. */
 const CHAT_READY = { ready: true, agentPreset: 'connector' } as const satisfies Snapshot['chat']
@@ -63,7 +62,7 @@ function mount(overrides: Partial<ConnectorsSectionInjected> = {}) {
     list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot()),
     revoke: vi.fn<ConnectorsSectionInjected['revoke']>().mockResolvedValue(undefined),
     probe: vi.fn<ConnectorsSectionInjected['probe']>()
-      .mockResolvedValue({ alive: true, enrollmentId: id('enrol-1'), probedAt: 0, latencyMs: 12, resolvedWorkdir: '/srv/work', workdirIsDirectory: true } as Report),
+      .mockResolvedValue({ alive: true, enrollmentId: id('enrol-1'), probedAt: 0, latencyMs: 12, resolvedWorkdir: '/srv/work', workdirIsDirectory: true }),
     origin: ORIGIN,
     copy: vi.fn<ConnectorsSectionInjected['copy']>().mockResolvedValue(undefined),
     t: (key: ConnectorsLocaleKey, params?: Record<string, unknown>) =>
@@ -293,7 +292,7 @@ describe('the liveness check', () => {
       list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
       probe: vi.fn<ConnectorsSectionInjected['probe']>().mockResolvedValue({
         alive: true, enrollmentId: id('enrol-1'), probedAt: 0, latencyMs: 7, resolvedWorkdir: '/srv/work', workdirIsDirectory: false,
-      } as Report),
+      }),
     })
     await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
 
@@ -307,7 +306,7 @@ describe('the liveness check', () => {
       list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
       probe: vi.fn<ConnectorsSectionInjected['probe']>().mockResolvedValue({
         alive: false, enrollmentId: id('enrol-1'), probedAt: 0, failure: 'not-attached', message: 're-run the connector pack on the target',
-      } as Report),
+      }),
     })
     await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
 
