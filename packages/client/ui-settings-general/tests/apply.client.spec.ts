@@ -25,7 +25,7 @@ const SEATS = [
   ['settings.section', GeneralSection],
 ] as const
 
-async function bench(isLoopback = true) {
+async function bench(isLoopback = true, configurationPlane = isLoopback) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -49,6 +49,7 @@ async function bench(isLoopback = true) {
   ctx.provide('connection', {
     api: { settings: { describe: settingsDescribe, openDocument: settingsOpenDocument } },
     isLoopback,
+    configurationPlane,
   } as never)
   new TestRemote(ctx)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
@@ -177,6 +178,18 @@ describe('ui-settings-general apply', () => {
     expect(b.settingsDescribe).not.toHaveBeenCalled()
     await fiber.dispose()
     for (const [name] of SEATS) expect(b.slots.entries(name)).toEqual([])
+  })
+
+  it('still withholds the document action on a remote page served the configuration plane', async () => {
+    // Opening the document drives the desktop of the machine running the host,
+    // which the wider plane scope does not grant; the mirror still reads.
+    const b = await bench(false, true)
+    declare(b.slots)
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    await fiber.await()
+    expect(b.slots.entries('settings.action')).toEqual([])
+    await vi.waitFor(() => { expect(b.settingsDescribe).toHaveBeenCalledOnce() })
+    await fiber.dispose()
   })
 
   it('re-registers after an HMR collapse of the declaring chain (stale disposers must not block)', async () => {

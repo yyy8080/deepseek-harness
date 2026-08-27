@@ -1,6 +1,7 @@
 /**
  * The web app's command-line provider: it parses the `dsh --profile web` flag
- * family (`--host`, `--port`, `--trusted-host`, `--no-open`) and its `--help`
+ * family (`--host`, `--port`, `--trusted-host`, `--configuration-plane`,
+ * `--no-open`) and its `--help`
  * text, then provides the immutable values as {@link WEB_STARTUP_SERVICE}.
  * Ordinary rows inject that service before reading it from lazy config.
  * @module @deepseek-ai/dsh-web-app/startup
@@ -9,6 +10,9 @@
 import { Command } from 'commander'
 import type { Context } from '@deepseek-ai/cordis'
 import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
+import {
+  DEFAULT_CONFIGURATION_PLANE_SCOPE, type ConfigurationPlaneScope,
+} from '@deepseek-ai/dsh-client-connection'
 
 /** Stable Cordis plugin name. */
 export const name = 'web-startup'
@@ -29,6 +33,8 @@ export interface WebStartupValues {
   port?: number
   /** Explicit `--trusted-host` authorities, in argument order. */
   trustedHosts: string[]
+  /** `--configuration-plane`, defaulting to the loopback scope. */
+  configurationPlane: ConfigurationPlaneScope
 }
 
 /** The web flag family, as commander parsed it. */
@@ -37,6 +43,22 @@ interface WebOptions {
   open: boolean
   port?: string
   trustedHost?: string[]
+  configurationPlane?: string
+}
+
+/** The scopes `--configuration-plane` accepts, in help order. */
+const CONFIGURATION_PLANE_SCOPES = ['loopback', 'trusted-hosts'] as const satisfies readonly ConfigurationPlaneScope[]
+
+/** Resolve `--configuration-plane`; an unknown scope is a usage error, an absent flag the default. */
+function resolveConfigurationPlane(program: Command, value: string | undefined): ConfigurationPlaneScope {
+  if (value === undefined) return DEFAULT_CONFIGURATION_PLANE_SCOPE
+  const scope = CONFIGURATION_PLANE_SCOPES.find(candidate => candidate === value)
+  if (scope === undefined) {
+    program.error(
+      `error: --configuration-plane must be one of ${CONFIGURATION_PLANE_SCOPES.join(', ')}, got ${JSON.stringify(value)}`,
+    )
+  }
+  return scope
 }
 
 /**
@@ -52,11 +74,20 @@ function webCommand(): Command {
     .option('--no-open', 'do not open the Web UI in the default browser')
     .option('--port <port>', 'listen port; pass 0 to let the OS pick a free one')
     .option('--trusted-host <authority...>', 'extra authority the /api browser-trust fence accepts (host or host:port; repeatable)')
+    .option(
+      '--configuration-plane <scope>',
+      'who may read and write settings, credentials, and agent presets: loopback (default), or trusted-hosts to also serve every --trusted-host authority',
+    )
     .addHelpText('after', `
 Examples:
   dsh --profile web                          serve on the composed host and port
   dsh --profile web --no-open                serve without opening a browser
   dsh --profile web --port 8080              serve on another port
+
+--configuration-plane trusted-hosts lets a remote browser configure model
+providers and credentials. The trust fence is a DNS-rebinding defense, not
+authentication, so anyone who can reach the port gets that access: use it only
+behind your own authentication.
 `)
 }
 
@@ -82,6 +113,7 @@ export function apply(ctx: Context): void {
       ...options.host !== undefined && { host: options.host },
       ...options.port !== undefined && { port: Number(options.port) },
       trustedHosts: options.trustedHost ?? [],
+      configurationPlane: resolveConfigurationPlane(program, options.configurationPlane),
     } satisfies WebStartupValues)
   })
   parseCmdline(ctx, program)

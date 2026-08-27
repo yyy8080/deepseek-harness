@@ -6,6 +6,9 @@ import type {} from '@deepseek-ai/dsh-attachment'
 import type { WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 import { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
+import {
+  CONFIGURATION_PLANE_GLOBAL, DEFAULT_CONFIGURATION_PLANE_SCOPE, type ConfigurationPlaneScope,
+} from './configuration-plane.ts'
 import { bridge, DEFAULT_MAX_REQUEST_BODY_BYTES } from './http-bridge.ts'
 import { assertTrustedAuthority, isTrustedApiRequest } from './api-request-trust.ts'
 import { HostConnectionService } from './rpc-host.ts'
@@ -22,6 +25,9 @@ export type {
 export { HostConnectionService } from './rpc-host.ts'
 
 export { API_PATH, HOST_EVENTS_PATH, MUX_EVENTS_PATH } from './api-path.ts'
+export {
+  CONFIGURATION_PLANE_GLOBAL, DEFAULT_CONFIGURATION_PLANE_SCOPE, type ConfigurationPlaneScope,
+} from './configuration-plane.ts'
 
 /** Stable Cordis plugin name. */
 export const name = 'client-connection'
@@ -57,58 +63,78 @@ export interface ConnectionConfig {
    * that is not a bare, canonical authority fails the plugin load.
    */
   trustedHosts?: string[]
+  /**
+   * Who may reach the configuration plane ({@link CONFIGURATION_PLANE_METHODS}).
+   * `loopback` (default) keeps it same-origin on the host machine;
+   * `trusted-hosts` extends it to every `trustedHosts` authority, which is the
+   * only way a remote browser can configure model providers and is a
+   * deliberate trust decision — `trustedHosts` is a DNS-rebinding fence, not
+   * authentication, so this scope hands the configuration and secret store to
+   * anyone who can reach the port. Deployments choosing it must put their own
+   * authentication in front of the server.
+   */
+  configurationPlane?: ConfigurationPlaneScope
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
 
 export const Config: z<ConnectionConfig> = z.object({
   trustedHosts: z.array(String).default([]),
+  configurationPlane: z.union(['loopback', 'trusted-hosts'] as const).default(DEFAULT_CONFIGURATION_PLANE_SCOPE),
   maxRequestBodyBytes: z.natural().min(1).default(DEFAULT_MAX_REQUEST_BODY_BYTES),
 })
 
 /**
- * Methods gated to loopback even on a trusted-host deployment. Native dialogs
- * act on the host machine; the settings and credential domains mutate the
+ * Methods that act on the machine running the host rather than on the caller's
+ * own view: they open a native dialog or hand a path to the host desktop.
+ * These stay loopback whatever the configuration-plane scope is, because a
+ * remote caller has nothing to gain from them and the deployment's operator
+ * has everything to lose.
+ */
+const NATIVE_DESKTOP_METHODS = new Set([
+  'agentPreset.openDocument',
+  'host.pickDirectory',
+  'host.openPath',
+  'settings.openDocument',
+])
+
+/**
+ * The configuration plane: the settings and credential domains mutate the
  * user's configuration and secret store, and READING them is equally
  * privileged — `settings.describe` returns every exposed namespace's
  * configuration and `credentials.describe` reports whether an arbitrary
  * environment-variable name is configured and where from, which is
- * reconnaissance no anonymous caller should have. `trustedHosts` is a
- * DNS-rebinding fence, explicitly not authentication, so the whole
- * configuration plane stays loopback-same-origin until a real authentication
- * layer exists. `llm.discoverModels` belongs to that plane on both counts: it
- * carries a draft credential, and it makes the HOST issue a GET to a URL the
- * caller chose and reports back the status or the parsed body — an anonymous
- * LAN caller would have a probe for whatever the host can reach and the
- * browser cannot.
+ * reconnaissance no anonymous caller should have. `llm.discoverModels` belongs
+ * to that plane on both counts: it carries a draft credential, and it makes
+ * the HOST issue a GET to a URL the caller chose and reports back the status
+ * or the parsed body — an anonymous caller would have a probe for whatever the
+ * host can reach and the browser cannot.
+ *
+ * A preset composition names the plugins a session runs, so reading one is
+ * reconnaissance; copy and remove rearrange what the deployment offers. (Authoring
+ * is copy-only, so no method here accepts composition text or a path; the pin is
+ * about who may manage the roster at all.) CHOOSING one is not pinned, and
+ * `agentPreset.list` is not either. Picking a preset looks like escalation — one
+ * of them mounts the toolset that edits the live runtime — but `session.create`
+ * already takes an `agentPreset`, so pinning only the switch would leave the same
+ * capability one method over. The deeper reason is that the capability is not the
+ * preset's to grant: the deployment's own default already carries `bash` and the
+ * filesystem tools, so any caller that may start a session at all can already run
+ * commands as this process. Pinning the switch would be a fence beside an open gate.
+ *
+ * This set is loopback-only by default and opens to `trustedHosts` when the
+ * deployment sets `configurationPlane: 'trusted-hosts'`, the choice described
+ * on {@link ConnectionConfig.configurationPlane}.
  *
  * The model catalog (`llm.providers`, `llm.models`) is deliberately NOT here:
  * it carries provider ids, display names, and model lists — no endpoints,
  * keys, or key state — and a LAN client's model picker legitimately needs it.
  */
-const PRIVILEGED_METHODS = new Set([
-  // A preset composition names the plugins a session runs, so reading one is
-  // reconnaissance; copy and remove rearrange what the deployment offers, and
-  // openDocument drives the host desktop — all more than the roster beside
-  // them. (Authoring is copy-only, so no method here accepts composition text
-  // or a path; the pin is about who may manage the roster at all.)
-  //
-  // CHOOSING one is not pinned, and `agentPreset.list` is not either. Picking a
-  // preset looks like escalation — one of them mounts the toolset that edits the
-  // live runtime — but `session.create` already takes an `agentPreset`, so
-  // pinning only the switch would leave the same capability one method over.
-  // The deeper reason is that the capability is not the preset's to grant: the
-  // deployment's own default already carries `bash` and the filesystem tools, so
-  // any caller that may start a session at all can already run commands as this
-  // process. Pinning the switch would be a fence beside an open gate.
+const CONFIGURATION_PLANE_METHODS = new Set([
   'agentPreset.read',
   'agentPreset.copy',
-  'agentPreset.openDocument',
   'agentPreset.remove',
-  'host.pickDirectory',
-  'host.openPath',
   'settings.describe',
-  'settings.openDocument',
   'settings.update',
   'settings.replace',
   'settings.mutate',
@@ -122,19 +148,22 @@ const PRIVILEGED_METHODS = new Set([
  * Mounts the API gateway under the browser transport prefix. Every request on
  * the prefix passes the browser-trust fence first (DNS-rebinding and
  * cross-site defense — [api-request-trust](./api-request-trust.ts));
- * privileged methods additionally pass it with an empty trust list, which
- * pins them to loopback.
+ * native-desktop methods additionally pass it with an empty trust list, which
+ * pins them to loopback, and configuration-plane methods pass it with the
+ * authorities the configured scope allows.
  * @param ctx - Host plugin context.
  * @param config - resolved plugin config (schema defaults applied).
  */
 export function apply(ctx: Context, config?: ConnectionConfig): void {
   // The Loader resolves schema defaults; hand-built test contexts may pass none.
   const trustedHosts = config?.trustedHosts ?? []
+  const configurationPlane = config?.configurationPlane ?? DEFAULT_CONFIGURATION_PLANE_SCOPE
   const maxRequestBodyBytes = config?.maxRequestBodyBytes ?? DEFAULT_MAX_REQUEST_BODY_BYTES
   // Config boundary: a malformed entry fails the load loudly here rather than
   // silently authorizing its hostname prefix at request time.
   for (const entry of trustedHosts) assertTrustedAuthority(entry)
   if (ctx.get('apiProxy') !== undefined) assertImageBodyCapacity(ctx, maxRequestBodyBytes)
+  const configurationPlaneHosts = configurationPlane === 'trusted-hosts' ? trustedHosts : []
   const connection = new HostConnectionService(ctx, trustedHosts)
   const fetchHandler = connection.createSharedFetchHandler(API_PATH, {
     async fetch(request) {
@@ -143,8 +172,13 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
         ? pathname.slice(API_PATH.length + 1)
         : undefined
       if (method !== undefined
-        && PRIVILEGED_METHODS.has(method)
+        && NATIVE_DESKTOP_METHODS.has(method)
         && !isTrustedApiRequest(request, [])) {
+        return new Response('forbidden', { status: 403 })
+      }
+      if (method !== undefined
+        && CONFIGURATION_PLANE_METHODS.has(method)
+        && !isTrustedApiRequest(request, configurationPlaneHosts)) {
         return new Response('forbidden', { status: 403 })
       }
       if (request.method === 'GET' && (pathname === MUX_EVENTS_PATH || pathname === HOST_EVENTS_PATH)) {
@@ -171,6 +205,12 @@ export function apply(ctx: Context, config?: ConnectionConfig): void {
     },
   }
   ctx.effect(() => ctx.webServer.register(route), 'client-connection: /api route')
+  // The browser half must not re-derive who may reach the configuration plane:
+  // the fence above owns that answer, and the page reads it before boot so its
+  // settings surfaces never open a call this handler would refuse.
+  ctx.on('webserver/index-inject', (table) => {
+    table.push({ kind: 'global', name: CONFIGURATION_PLANE_GLOBAL, value: configurationPlane })
+  })
   ctx.inject(['apiProxy'], (apiCtx) => {
     assertImageBodyCapacity(apiCtx, maxRequestBodyBytes)
     const downlinks = new WebSocketDownlinks(apiCtx.apiProxy)

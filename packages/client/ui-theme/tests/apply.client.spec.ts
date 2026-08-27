@@ -25,7 +25,7 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-async function bench(isLoopback = true) {
+async function bench(configurationPlane = true) {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -54,7 +54,11 @@ async function bench(isLoopback = true) {
       result: { ok: true as const, value: namespace() },
     })
   })
-  ctx.provide('connection', { api: { settings: { describe, mutate } }, isLoopback } as never)
+  ctx.provide('connection', {
+    api: { settings: { describe, mutate } },
+    isLoopback: configurationPlane,
+    configurationPlane,
+  } as never)
   // The settings transport and the forwarded-event port the plugin injects.
   new TestRemote(ctx)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()

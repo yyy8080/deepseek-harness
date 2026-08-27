@@ -428,7 +428,7 @@ describe('SettingsScopeBinder.bind', () => {
     const wire = { settings: { describe: describeCall } }
     const mirror = new SettingsDescribeMirror(wire as never)
     const ctx = new Context()
-    ctx.provide('connection', { api: wire, isLoopback: true } as never)
+    ctx.provide('connection', { api: wire, isLoopback: true, configurationPlane: true } as never)
     let theme!: SettingsScope<UiTestSettings>
     let locale!: SettingsScope<UiTestSettings>
     new TestRemote(ctx)
@@ -452,12 +452,12 @@ describe('SettingsScopeBinder.bind', () => {
     expect(theme.getSnapshot()).toMatchObject({ revision: 1 })
   })
 
-  it('binds a remote browser in memory mode without starting a settings read', async () => {
+  it('binds a browser without the configuration plane in memory mode, starting no settings read', async () => {
     const describeCall = vi.fn()
     const wire = { settings: { describe: describeCall } }
     const mirror = new SettingsDescribeMirror(wire as never, 'memory')
     const ctx = new Context()
-    ctx.provide('connection', { api: wire, isLoopback: false } as never)
+    ctx.provide('connection', { api: wire, isLoopback: false, configurationPlane: false } as never)
     let scope!: SettingsScope<UiTestSettings>
     new TestRemote(ctx)
     await ctx.plugin(SettingsScopeBinder, { mirror, schema: settingsSchema }).await()
