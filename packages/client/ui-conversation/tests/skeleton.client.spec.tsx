@@ -451,7 +451,7 @@ describe('ConversationRoot resident composer', () => {
     expect(box.placeholder).toBe('描述你想要构建的内容')
     // The chip reports the machine and its directory, and opens no picker:
     // no local workspace can be substituted for the binding.
-    expect(b.view.getByText('build-box · one')).toBeTruthy()
+    expect(b.view.getByText('one · build-box')).toBeTruthy()
     expect(b.view.queryByRole('button', { name: '选择工作区' })).toBeNull()
     fireEvent.click(b.view.getByRole('button', { name: /已连接的机器/ }))
     expect(b.pickerOwner()).toBeUndefined()

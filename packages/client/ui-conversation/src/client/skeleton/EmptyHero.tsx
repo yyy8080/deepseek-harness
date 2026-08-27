@@ -60,6 +60,9 @@ export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t, 
         className={css.workspace}
         aria-label={t('hero.connectorWorkspace')}
         aria-disabled="true"
+        // The chip is narrow and the connector id is opaque, so the label is
+        // routinely ellipsized; the tooltip is where the whole one is legible.
+        title={label}
         data-connector-workspace=""
       >
         <IconFolderOpen16 className={css.folder} size={16} />
