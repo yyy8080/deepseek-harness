@@ -780,7 +780,7 @@ describe('mintRpcId', () => {
       }
     }
     const platform = globalThis.crypto
-    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array) => platform.getRandomValues(bytes) })
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array<ArrayBuffer>) => platform.getRandomValues(bytes) })
     try {
       const probe = new Probe()
       await probe.sessions.list({})
