@@ -113,7 +113,7 @@ describe('the Connectors page', () => {
 
   it('tells the user a non-expiring key auto-reconnects instead of showing a deadline', async () => {
     mount({
-      issue: vi.fn<ConnectorsSectionInjected['issue']>().mockResolvedValue({ ...TICKET, expiresAt: null } as typeof TICKET),
+      issue: vi.fn<ConnectorsSectionInjected['issue']>().mockResolvedValue({ ...TICKET, expiresAt: null }),
     })
 
     fireEvent.click(screen.getByText(en.platformLinux))

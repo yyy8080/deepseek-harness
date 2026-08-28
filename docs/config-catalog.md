@@ -935,10 +935,27 @@ Requires: `connectors` · `webServer`
 export interface Config {
   /** Route prefix every portal path hangs under. */
   basePath?: string
-  /** How long a freshly issued pack stays downloadable, in milliseconds. */
+  /**
+   * How long a freshly issued pack stays downloadable, in milliseconds. `0`
+   * leaves the download open until the enrollment is revoked. It gates the
+   * download of the script file only; the reconnect credential the pack
+   * carries never expires either way.
+   */
   packTtlMs?: number
   /** How many target machines may be attached at once. */
   maxConnectors?: number
+  /**
+   * Absolute path of the JSON file the reconnect-credential ledger is
+   * persisted to. Left unset, it lives at `connectors/enrollments.json` under
+   * the harness home, so enrollments survive a restart or plugin reload and an
+   * agent re-dials with the same secret.
+   */
+  storePath?: string
+  /**
+   * Harness home the credential store lives under when `storePath` is omitted.
+   * Defaults to `$DSH_HOME` or `~/.dsh`.
+   */
+  dshHome?: string
   /**
    * Absolute origin the generated packs dial back to. Leave it unset to derive
    * the origin from each download request, which is what a deployment behind an
@@ -969,7 +986,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/host/connector-portal/src/index.ts:87`](../packages/host/connector-portal/src/index.ts)
+Source: [`packages/host/connector-portal/src/index.ts:92`](../packages/host/connector-portal/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 

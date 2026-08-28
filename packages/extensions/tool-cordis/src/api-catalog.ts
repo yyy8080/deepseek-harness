@@ -625,8 +625,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'The connector portal service (`ctx.connectorPortal`). It owns the enrollment ledger, the routes that serve packs and accept attachments, and the registrations attached targets hold in `ctx.connectors`.',
     methods: [
       {
-        signature: '@Remote(\'issue\') issue(request: ConnectorPackRequest): ConnectorPackTicket',
-        description: 'Mint one enrollment and describe the pack the browser should fetch.',
+        signature: '@Remote(\'issue\') async issue(request: ConnectorPackRequest): Promise<ConnectorPackTicket>',
+        description: 'Mint one enrollment and describe the pack the browser should fetch. The new credential is persisted before the ticket is returned, so a machine enrolled just before a restart survives it.',
         parameters: [{ name: 'request', description: 'the target family the user picked.' }],
         returns: 'the download path, file name, and download deadline.',
       },
@@ -3290,11 +3290,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorEnrollmentStatus',
-    declaration: 'export type ConnectorEnrollmentStatus = \'issued\' | \'downloaded\' | \'attached\' | \'expired\';',
+    declaration: 'export type ConnectorEnrollmentStatus = \'issued\' | \'downloaded\' | \'attached\';',
   },
   {
     name: 'ConnectorEnrollmentView',
-    declaration: 'export interface ConnectorEnrollmentView {\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly connectorId: string;\n    readonly os: ConnectorPackOs;\n    readonly status: ConnectorEnrollmentStatus;\n    readonly label: string | null;\n    readonly workdir: string | null;\n    readonly issuedAt: number;\n    readonly expiresAt: number;\n}',
+    declaration: 'export interface ConnectorEnrollmentView {\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly connectorId: string;\n    readonly os: ConnectorPackOs;\n    readonly status: ConnectorEnrollmentStatus;\n    readonly label: string | null;\n    readonly workdir: string | null;\n    readonly issuedAt: number;\n}',
   },
   {
     name: 'ConnectorFileOperations',
@@ -3326,7 +3326,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorPackTicket',
-    declaration: 'export interface ConnectorPackTicket {\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly os: ConnectorPackOs;\n    readonly downloadPath: string;\n    readonly fileName: string;\n    readonly installPath: string;\n    readonly expiresAt: number;\n}',
+    declaration: 'export interface ConnectorPackTicket {\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly os: ConnectorPackOs;\n    readonly downloadPath: string;\n    readonly fileName: string;\n    readonly installPath: string;\n    readonly expiresAt: number | null;\n}',
   },
   {
     name: 'ConnectorPortalSnapshot',

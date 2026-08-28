@@ -88,7 +88,10 @@ async function harness(config: Config = {}, presets?: Readonly<Record<string, st
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   await ctx.plugin(ConnectorRegistry, {})
   if (presets !== undefined) ctx.provide('agentPresets', roster(presets) as never)
-  await ctx.plugin(ConnectorPortal, { agentProgramPath: AGENT_PROGRAM, storePath: freshStorePath(), ...config })
+  // Tests that name their own store location (or a harness home for the
+  // default-path behavior) keep it; everything else gets a throwaway store.
+  const store = 'storePath' in config || 'dshHome' in config ? {} : { storePath: freshStorePath() }
+  await ctx.plugin(ConnectorPortal, { agentProgramPath: AGENT_PROGRAM, ...store, ...config })
   const portal = ctx.get('connectorPortal') as ConnectorPortal
   return { ctx, portal, origin: `http://127.0.0.1:${String(ctx.webServer.port)}` }
 }
@@ -686,7 +689,7 @@ describe('surviving a restart', () => {
     const dshHome = mkdtempSync(join(tmpdir(), 'dsh-connector-home-'))
     storeDirs.push(dshHome)
 
-    const { portal } = await harness({ dshHome, storePath: undefined })
+    const { portal } = await harness({ dshHome })
     await portal.issue({ os: 'linux' })
 
     const stored = JSON.parse(readFileSync(join(dshHome, 'connectors', 'enrollments.json'), 'utf8')) as {
