@@ -24,7 +24,7 @@
 |---|---|
 | `GET <basePath>/pack/<enrollmentId>` | 渲染该登记记录的启动脚本——`dsh-connector.sh` 或 `dsh-connector.ps1`——其中带有本部署的源与登记密钥。 |
 | `GET <basePath>/agent.mjs` | 提供打包好的 agent 程序。它不含密钥，对每台目标都相同，由 pack 负责抓取。构建中没有该 bundle 时返回 `503`。 |
-| `UPGRADE <basePath>/attach` | 通过 `dsh-connector` 升级协议接受 agent 的反向连接。 |
+| `UPGRADE <basePath>/attach` | 通过 `dsh-connector` 升级协议接受 agent 的反向连接。落到同一路径的普通请求回应 `426 Upgrade Required` 并点明升级头被剥离，绝不回 `404`。 |
 
 `connectorPortal` Remote 回应 `issue`（铸出一条登记记录并描述其下载）、`list`（设置页渲染的账本，外加账本里的机器能否承载一场对话）、`probe`（对已接入机器做一次实时往返）与 `revoke`（丢弃一条登记记录，同时断开其 agent）。浏览器一侧是 [`client-ui-settings-connectors`](../../client/ui-settings-connectors/README.zh.md)。
 
@@ -32,6 +32,7 @@
 
 - **两种生命周期** — pack 下载是短命的，因为文件里带着密钥，而遗留在 shell 历史里的过期链接才是现实中的泄漏面。它授权的接入则不是：一台一直在跑的目标机器要能熬过笔记本休眠与网络切换，而不必重新下载。账本用 `issued`、`downloaded`、`attached`、`expired` 四个词描述记录。
 - **接入准入** — token 自带其登记记录名，并携带 24 字节、以常量时间比较的密钥。已接入的登记记录再次拨入时替换自己的连接，而不计入 `maxConnectors`，因为上一条 socket 正是目标机器自己已经放弃的那条。
+- **升级头在途中丢失的拨入** — `Upgrade` 与 `Connection` 都是逐跳头，明文 HTTP 上的透明代理可以随手丢掉它们，agent 的拨入于是变成一个普通 `GET`，node 根本不会为它抛出 upgrade 事件。该路径以 `426` 回应，说清这一诊断与对策——改拨 `https` 源，让连接端到端穿过去——并把话说得足够短，使 agent 自己的拒绝报告能完整带上。否则，发布在 `http:` 上、又处在这种网络里的部署只会看到端点像是不存在。
 - **接管竞争** — 每次准入的接入都持有一个代号。若某次接管在更晚的拨入被准入之后、或在登记记录被吊销之后才完成握手，它会关掉自己的 link 而不占用槽位，因此注册始终属于最新的 agent。
 - **测活** — `probe` 沿着实时 link 解析并 stat 已接入机器自己的工作目录，报告这次往返的时延、目标机器解析出的路径，以及该路径此刻在那边是否仍是目录。账本里的 `attached` 记录的是最后一次完成的握手，一台已被挂起、杀死或网络隔离的目标依然带着它，两个答案正是在关键时刻才分道扬镳。被 abort 的连接器调用并不会因此完结——传输层只是通知目标取消，然后继续等一个目标永远不会发出的回答——所以入口自己执行 `probeTimeoutMs`，报告 `link-failed` 而不是一直挂着。
 - **能否开对话** — `list` 会报告本部署到底能不能发起一场绑定连接器的对话。它每次调用都从 roster 重新读取 `chatPreset`，因此进程运行期间新写或删除的 preset 会立刻改变答案；当所指的组合会让对话跑在本机而不是目标机器上时，它以 `no-preset-roster`、`preset-missing` 或 `preset-not-connector-backed` 拒绝。
