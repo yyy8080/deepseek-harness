@@ -148,6 +148,7 @@
         printUrl: true
         surfaceContext: true
         trustedHosts: !!js ctx.webStartup.trustedHosts
+        configurationPlane: !!js ctx.webStartup.configurationPlane
 
     # Downloadable connector packs and the endpoint their agents dial back to.
     # Only a browser that already reached this deployment can mint a pack, and
@@ -181,6 +182,9 @@
         # A deployment adding authorities keeps this expression and concatenates
         # its literals, for example: ['app.internal', ...ctx.webRuntime.trustedHosts].
         trustedHosts: !!js ctx.webRuntime.trustedHosts
+        # Loopback unless --configuration-plane trusted-hosts named the wider
+        # scope; see ConnectionConfig.configurationPlane for what that grants.
+        configurationPlane: !!js ctx.webRuntime.configurationPlane
 
     - id: api-remotes
       name: '@deepseek-ai/dsh-api-remotes'

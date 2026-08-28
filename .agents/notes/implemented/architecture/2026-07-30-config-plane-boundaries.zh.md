@@ -6,7 +6,7 @@ Status: implemented
 
 > 范围：对 [Web 配置面](2026-07-30-web-config-plane.zh.md)的边界加固——哪些 namespace 能抵达协议、哪些调用方能抵达它们，以及一个只持有局部且可能陈旧的视图的编辑器该如何写入，才不会毁掉它看不见的东西。
 
-> 调用方边界、脱敏与 revision 设栅依然有效。把「哪些 namespace 能抵达协议」限制为可配置提供方目录这一条，已被[由插件自己拥有的设置表层](2026-08-12-plugin-owned-settings-surface.zh.md)取代——后者服务每一个已注册的 namespace。
+> 脱敏与 revision 设栅依然有效。把「哪些 namespace 能抵达协议」限制为可配置提供方目录这一条，已被[由插件自己拥有的设置表层](2026-08-12-plugin-owned-settings-surface.zh.md)取代——后者服务每一个已注册的 namespace。把调用方边界无条件钉死在回环这一条，已被[配置面 scope](2026-08-27-configuration-plane-scope.zh.md)取代——后者保留回环为默认值，并允许部署改为声明 `trustedHosts`；读取配置依然与写入配置同样属于特权操作。
 
 ## 问题
 

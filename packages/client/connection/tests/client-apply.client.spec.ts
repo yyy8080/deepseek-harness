@@ -5,6 +5,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply, type ConnectionHandle } from '../src/client/index.ts'
+import { CONFIGURATION_PLANE_GLOBAL } from '../src/configuration-plane.ts'
 import type { RpcMessage } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
 import { FixtureApiClient } from '../src/client/fixture.ts'
@@ -68,6 +69,7 @@ describe('connection client apply', () => {
     const handle = await mount()
     expect(handle.api).toBeInstanceOf(WebApiClient)
     expect(handle.isLoopback).toBe(true)
+    expect(handle.configurationPlane).toBe(true)
   })
 
   it('selects the fixture client under ?fixture (and with no location at all stays real)', async () => {
@@ -81,7 +83,33 @@ describe('connection client apply', () => {
 
   it('reports non-loopback page authority through the connection handle', async () => {
     ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
-    expect((await mount()).isLoopback).toBe(false)
+    const handle = await mount()
+    expect(handle.isLoopback).toBe(false)
+    // Without the served scope the page assumes the host's own default.
+    expect(handle.configurationPlane).toBe(false)
+  })
+
+  it('takes the configuration-plane gate from the served scope, not the page hostname', async () => {
+    ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
+    vi.stubGlobal(CONFIGURATION_PLANE_GLOBAL, 'trusted-hosts')
+    try {
+      const handle = await mount()
+      expect(handle.configurationPlane).toBe(true)
+      // The host desktop is a separate question the wider scope does not answer.
+      expect(handle.isLoopback).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('keeps the plane closed for a remote page when the served scope is loopback', async () => {
+    ;(globalThis as Win).location = { hostname: '192.0.2.20', search: '' }
+    vi.stubGlobal(CONFIGURATION_PLANE_GLOBAL, 'loopback')
+    try {
+      expect((await mount()).configurationPlane).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('start() hands out one loop, rejects a second consumer, and stop() aborts the streams', async () => {

@@ -1,8 +1,8 @@
 /**
  * Welcome-notice state derived from the welcome settings scope. The scope is
- * the transport: a loopback browser follows the durable Host section, while a
- * remote browser's memory-mode scope never answers and the acknowledgement
- * stays process-local here.
+ * the transport: a browser the host serves the configuration plane to follows
+ * the durable Host section, while a memory-mode scope never answers and the
+ * acknowledgement stays process-local here.
  */
 
 import type { SettingsScope, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'

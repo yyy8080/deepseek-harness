@@ -10,6 +10,7 @@ import { FixtureApiClient } from './fixture.ts'
 import { WebApiClient } from './web-api-client.ts'
 import { createWebConnectionRpc, type RpcFetch } from './rpc.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
+import { CONFIGURATION_PLANE_GLOBAL, type ConfigurationPlaneScope } from '../configuration-plane.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 
 // ---- Contract re-exports (browser-safe apiproxy channels + core types) ----
@@ -78,6 +79,20 @@ interface ClientTransportGlobal {
 }
 
 /**
+ * Whether this page may use the configuration plane (`settings.*`,
+ * `credentials.*`, preset authoring, model discovery). The served index
+ * carries the host fence's own scope, so the browser reports the host's
+ * decision rather than a second guess; a page without the global — a fixture
+ * shell or a worker preview — falls back to the loopback scope, which is also
+ * the host's default.
+ */
+function servesConfigurationPlane(pageLocation: Location | undefined): boolean {
+  const scope: unknown = (globalThis as Record<string, unknown>)[CONFIGURATION_PLANE_GLOBAL]
+  if (scope === ('trusted-hosts' satisfies ConfigurationPlaneScope)) return true
+  return pageLocation === undefined || isLoopbackHostname(pageLocation.hostname)
+}
+
+/**
  * The ctx.connection service API: the API client plus a one-shot
  * controller starter (the runtime plugin supplies sinks when its object layer
  * is ready — connection stays consumer-agnostic).
@@ -85,8 +100,20 @@ interface ClientTransportGlobal {
 export interface ConnectionHandle {
   /** Shared api client (fixture or real, decided at boot from the page URL). */
   readonly api: IApiClient
-  /** Whether the current page authority is loopback; non-browser contexts default to true. */
+  /**
+   * Whether the current page authority is loopback; non-browser contexts
+   * default to true. Consumers of the host's own desktop (opening a path or a
+   * document on the machine running the host) gate on this; configuration
+   * surfaces gate on {@link ConnectionHandle.configurationPlane} instead.
+   */
   readonly isLoopback: boolean
+  /**
+   * Whether the host serves this page the configuration plane — `settings.*`,
+   * `credentials.*`, preset authoring, and model discovery. Loopback pages
+   * always have it; a remote page has it only on a deployment that declared
+   * `configurationPlane: 'trusted-hosts'`.
+   */
+  readonly configurationPlane: boolean
   /** Generation-scoped Host facts, including the account home and native path-open capability. */
   readonly hostDescription: HostDescriptionSource
   /** Generic logical RPC channels over the same Connection transport. */
@@ -130,6 +157,7 @@ export function apply(ctx: Context): void {
   const handle: ConnectionHandle = {
     api,
     isLoopback: pageLocation === undefined || isLoopbackHostname(pageLocation.hostname),
+    configurationPlane: servesConfigurationPlane(pageLocation),
     hostDescription: {
       getSnapshot: () => description,
       subscribe: (listener) => {

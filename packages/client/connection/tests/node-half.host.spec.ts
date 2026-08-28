@@ -9,8 +9,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { ApiProxy } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
-import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
-import { API_PATH, apply, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH, type HostConnectionHandle } from '../src/index.ts'
+import type { IndexInjection, WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
+import {
+  API_PATH, apply, CONFIGURATION_PLANE_GLOBAL, HOST_EVENTS_PATH, inject, MUX_EVENTS_PATH,
+  type ConnectionConfig, type HostConnectionHandle,
+} from '../src/index.ts'
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
 
 /** Structural webServer fake recording both route registries. */
@@ -75,9 +78,10 @@ function fakeResponse(): { response: ServerResponse; state: { status?: number; b
   return { response, state }
 }
 
-async function mounted(config?: { trustedHosts?: string[] }): Promise<{
+async function mounted(config?: ConnectionConfig): Promise<{
   routes: WebRoute[]
   upgrades: WebUpgradeRoute[]
+  injections: () => IndexInjection[]
   dispose: () => Promise<void>
 }> {
   const ctx = new Context()
@@ -87,8 +91,28 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
   ctx.provide('apiProxy', {} as unknown as ApiProxy)
   const fiber = ctx.plugin({ inject: [...inject], apply }, config)
   await fiber.await()
-  return { routes, upgrades, dispose: () => fiber.dispose() }
+  const injections = (): IndexInjection[] => {
+    const table: IndexInjection[] = []
+    ctx.emit('webserver/index-inject', table)
+    return table
+  }
+  return { routes, upgrades, injections, dispose: () => fiber.dispose() }
 }
+
+/** Every method the fence keeps off a declared non-loopback authority by default. */
+const CONFIGURATION_PLANE_METHODS = [
+  'settings.describe', 'settings.update', 'settings.replace', 'settings.mutate',
+  'credentials.describe', 'credentials.set', 'credentials.unset',
+  'llm.discoverModels',
+  // A composition names the plugins a session runs: reading one is
+  // reconnaissance, and copy/remove manage the roster.
+  'agentPreset.read', 'agentPreset.copy', 'agentPreset.remove',
+]
+
+/** Methods that act on the machine running the host, whatever the plane scope is. */
+const NATIVE_DESKTOP_METHODS = [
+  'host.pickDirectory', 'host.openPath', 'settings.openDocument', 'agentPreset.openDocument',
+]
 
 describe('connection node half', () => {
   it('reserves enough default carrier capacity for the 200 MiB image batch', () => {
@@ -167,23 +191,12 @@ describe('connection node half', () => {
     await dispose()
   })
 
-  it('pins privileged methods to loopback even for a declared trusted authority', async () => {
-    const { routes, dispose } = await mounted({ trustedHosts: ['harness.example'] })
-    // The privileged set: native dialogs plus the whole settings/credential
-    // configuration plane, reads included, plus the one method that makes the
-    // host fetch a caller-chosen URL. The same declared authority reaches
-    // ordinary reads (carrier-level 404 from the empty proxy proves the fence
-    // passed), but each privileged method stays loopback-only and 403s.
-    for (const method of [
-      'host.pickDirectory', 'host.openPath',
-      'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
-      'credentials.describe', 'credentials.set', 'credentials.unset',
-      'llm.discoverModels',
-      // A composition names the plugins a session runs: reading one is
-      // reconnaissance, and copy/remove/openDocument manage the roster and
-      // drive the host desktop.
-      'agentPreset.read', 'agentPreset.copy', 'agentPreset.openDocument', 'agentPreset.remove',
-    ]) {
+  it('pins privileged methods to loopback for a declared trusted authority by default', async () => {
+    const { routes, injections, dispose } = await mounted({ trustedHosts: ['harness.example'] })
+    // The declared authority reaches ordinary reads (carrier-level 404 from the
+    // empty proxy proves the fence passed), while the configuration plane and
+    // the host desktop both stay loopback-only under the default scope.
+    for (const method of [...CONFIGURATION_PLANE_METHODS, ...NATIVE_DESKTOP_METHODS]) {
       const denied = fakeResponse()
       await routes[0]!.handler(
         fakeRequest({ host: 'harness.example' }, `${API_PATH}/${method}`),
@@ -195,6 +208,46 @@ describe('connection node half', () => {
     const read = fakeResponse()
     await routes[0]!.handler(fakeRequest({ host: 'harness.example' }), read.response)
     expect(read.state.status).not.toBe(403)
+    expect(injections()).toEqual([
+      { kind: 'global', name: CONFIGURATION_PLANE_GLOBAL, value: 'loopback' },
+    ])
+    await dispose()
+  })
+
+  it('serves the configuration plane to a declared authority under the trusted-hosts scope', async () => {
+    const { routes, injections, dispose } = await mounted({
+      trustedHosts: ['harness.example'],
+      configurationPlane: 'trusted-hosts',
+    })
+    for (const method of CONFIGURATION_PLANE_METHODS) {
+      const served = fakeResponse()
+      await routes[0]!.handler(
+        fakeRequest({ host: 'harness.example' }, `${API_PATH}/${method}`),
+        served.response,
+      )
+      expect(served.state.status).toBe(404)
+    }
+    // Opening a document or a native dialog acts on the machine running the
+    // host, so the wider scope does not reach it.
+    for (const method of NATIVE_DESKTOP_METHODS) {
+      const denied = fakeResponse()
+      await routes[0]!.handler(
+        fakeRequest({ host: 'harness.example' }, `${API_PATH}/${method}`),
+        denied.response,
+      )
+      expect(denied.state.status).toBe(403)
+    }
+    // An authority nobody declared stays out of the plane under either scope.
+    const stranger = fakeResponse()
+    await routes[0]!.handler(
+      fakeRequest({ host: 'attacker.example' }, `${API_PATH}/settings.describe`),
+      stranger.response,
+    )
+    expect(stranger.state.status).toBe(403)
+    // The browser half reads its own gate from this row instead of guessing.
+    expect(injections()).toEqual([
+      { kind: 'global', name: CONFIGURATION_PLANE_GLOBAL, value: 'trusted-hosts' },
+    ])
     await dispose()
   })
 

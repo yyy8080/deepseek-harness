@@ -18,6 +18,9 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { addHarnessSourceSection } from '@deepseek-ai/dsh-app-boot'
+import {
+  DEFAULT_CONFIGURATION_PLANE_SCOPE, type ConfigurationPlaneScope,
+} from '@deepseek-ai/dsh-client-connection'
 import * as FrontendStatic from '@deepseek-ai/dsh-host-frontend-static'
 import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { scrubbedParentEnv } from '@deepseek-ai/dsh-subprocess'
@@ -53,6 +56,13 @@ export interface Config {
   surfaceContext: boolean
   /** Explicit `--trusted-host` authorities from this invocation. */
   trustedHosts: string[]
+  /**
+   * Who this invocation serves the configuration plane to, forwarded verbatim
+   * to the `/api` fence and to the browser: `loopback` (the default) or
+   * `trusted-hosts`, which is the remote-deployment scope described on
+   * `ConnectionConfig.configurationPlane`.
+   */
+  configurationPlane: ConfigurationPlaneScope
 }
 
 export const Config: z<Config> = z.object({
@@ -60,6 +70,7 @@ export const Config: z<Config> = z.object({
   printUrl: z.boolean().default(true),
   surfaceContext: z.boolean().default(true),
   trustedHosts: z.array(String).default([]),
+  configurationPlane: z.union(['loopback', 'trusted-hosts'] as const).default(DEFAULT_CONFIGURATION_PLANE_SCOPE),
 })
 
 /** Bind-dependent Web values shared by the trust fence and URL display. */
@@ -68,6 +79,8 @@ export interface WebRuntimeValues {
   lanAddresses: string[]
   /** LAN literals followed by explicit invocation authorities. */
   trustedHosts: string[]
+  /** The configuration-plane scope the `/api` fence row reads. */
+  configurationPlane: ConfigurationPlaneScope
 }
 
 /** Environment variable naming the canonical local URL of this Web GUI. */
@@ -127,15 +140,20 @@ try {
  * an OS-assigned port is unknowable before bind.
  * @param bindHost - the active webserver bind host.
  * @param extra - explicit `--trusted-host` values, in argument order.
- * @returns the LAN display addresses and invocation-derived fence authorities.
+ * @param configurationPlane - the scope forwarded to the `/api` fence row.
+ * @returns the LAN display addresses, invocation-derived fence authorities, and the plane scope.
  */
-export function resolveLanTrust(bindHost: string, extra: readonly string[]): WebRuntimeValues {
+export function resolveLanTrust(
+  bindHost: string,
+  extra: readonly string[],
+  configurationPlane: ConfigurationPlaneScope,
+): WebRuntimeValues {
   const lanAddresses = bindHost === ALL_INTERFACES_HOST
     ? Object.values(networkInterfaces()).flat()
       .filter((iface): iface is NonNullable<typeof iface> => iface !== undefined && iface.family === 'IPv4' && !iface.internal)
       .map(iface => iface.address)
     : []
-  return { lanAddresses, trustedHosts: [...lanAddresses, ...extra] }
+  return { lanAddresses, trustedHosts: [...lanAddresses, ...extra], configurationPlane }
 }
 
 /** Model-visible orientation and acceptance boundary for sessions created through `dsh web`. */
@@ -224,7 +242,7 @@ export const internals: {
  * @param config - validated {@link Config}.
  */
 export function apply(ctx: Context, config: Config): void {
-  const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts)
+  const runtime = resolveLanTrust(ctx.webServer.host, config.trustedHosts, config.configurationPlane)
   // The loopback URL belongs to this host. Under SSH, the operator reaches it
   // through a local forwarding address that this process cannot derive.
   const handoffBrowser = config.openBrowser && !launchedThroughSsh(ctx)
