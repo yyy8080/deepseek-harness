@@ -32,12 +32,21 @@ export interface ConnectorPackTicket {
    * composes the copyable command from it and its own origin.
    */
   readonly installPath: string
-  /** Epoch milliseconds after which the download path stops answering. */
-  readonly expiresAt: number
+  /**
+   * Epoch milliseconds after which the download path stops answering, or `null`
+   * when the download never expires. It gates the download of the script file
+   * only; the reconnect credential the pack carries is valid until the
+   * enrollment is removed.
+   */
+  readonly expiresAt: number | null
 }
 
-/** Lifecycle of one enrollment as the portal reports it. */
-export type ConnectorEnrollmentStatus = 'issued' | 'downloaded' | 'attached' | 'expired'
+/**
+ * Lifecycle of one enrollment as the portal reports it. The reconnect
+ * credential never expires, so a record only ever waits for its pack to be
+ * downloaded, waits for its agent to dial in, or is attached.
+ */
+export type ConnectorEnrollmentStatus = 'issued' | 'downloaded' | 'attached'
 
 /** One enrollment and, once its agent dialled in, the machine behind it. */
 export interface ConnectorEnrollmentView {
@@ -53,8 +62,6 @@ export interface ConnectorEnrollmentView {
   readonly workdir: string | null
   /** Epoch milliseconds the enrollment was issued at. */
   readonly issuedAt: number
-  /** Epoch milliseconds the pack download stops answering at. */
-  readonly expiresAt: number
 }
 
 /**

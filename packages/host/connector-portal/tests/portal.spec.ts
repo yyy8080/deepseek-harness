@@ -6,10 +6,13 @@
 
 import { Buffer } from 'node:buffer'
 import { once } from 'node:events'
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createServer, request as httpRequest } from 'node:http'
 import type { IncomingMessage } from 'node:http'
 import { connect } from 'node:net'
 import type { AddressInfo, Socket } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -39,11 +42,24 @@ const AGENT_PROGRAM = fileURLToPath(new URL('fixtures/agent-program.mjs', import
 
 const contexts: Context[] = []
 const stopAgents: Array<() => void | Promise<void>> = []
+const storeDirs: string[] = []
 
 afterEach(async () => {
   for (const stop of stopAgents.splice(0)) await stop()
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const dir of storeDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
+
+/**
+ * A per-test credential-store path under a fresh temp directory, so no test
+ * touches the real harness home or another test's ledger.
+ * @returns the absolute store-file path.
+ */
+function freshStorePath(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'dsh-connector-portal-'))
+  storeDirs.push(dir)
+  return join(dir, 'enrollments.json')
+}
 
 interface Harness {
   ctx: Context
@@ -72,7 +88,7 @@ async function harness(config: Config = {}, presets?: Readonly<Record<string, st
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
   await ctx.plugin(ConnectorRegistry, {})
   if (presets !== undefined) ctx.provide('agentPresets', roster(presets) as never)
-  await ctx.plugin(ConnectorPortal, { agentProgramPath: AGENT_PROGRAM, ...config })
+  await ctx.plugin(ConnectorPortal, { agentProgramPath: AGENT_PROGRAM, storePath: freshStorePath(), ...config })
   const portal = ctx.get('connectorPortal') as ConnectorPortal
   return { ctx, portal, origin: `http://127.0.0.1:${String(ctx.webServer.port)}` }
 }
@@ -159,7 +175,7 @@ function readyFrame(workdir: string): string {
 
 /** Issue one enrollment and read the token out of its downloaded pack. */
 async function enroll(portal: ConnectorPortal, origin: string): Promise<{ id: ConnectorEnrollmentId; token: string }> {
-  const ticket = portal.issue({ os: 'linux' })
+  const ticket = await portal.issue({ os: 'linux' })
   const script = (await get(origin, ticket.downloadPath)).body
   return { id: ticket.enrollmentId, token: /DSH_CONNECTOR_TOKEN="([^"]+)"/.exec(script)?.[1] as string }
 }
@@ -222,7 +238,7 @@ describe('the Remote the browser calls', () => {
   it('describes the pack a freshly issued enrollment downloads', async () => {
     const { portal } = await harness()
 
-    const ticket = portal.issue({ os: 'windows' })
+    const ticket = await portal.issue({ os: 'windows' })
 
     expect(ticket).toMatchObject({ os: 'windows', fileName: 'dsh-connector.ps1' })
     expect(ticket.downloadPath).toBe(`/connector/pack/${String(ticket.enrollmentId)}`)
@@ -283,7 +299,7 @@ describe('the routes the portal registers', () => {
 
   it('renders the pack for the origin the browser reached it on', async () => {
     const { portal, origin } = await harness()
-    const ticket = portal.issue({ os: 'linux' })
+    const ticket = await portal.issue({ os: 'linux' })
 
     const response = await get(origin, ticket.downloadPath)
 
@@ -295,7 +311,7 @@ describe('the routes the portal registers', () => {
 
   it('renders the pack for a configured public origin when a proxy rewrites Host', async () => {
     const { portal, origin } = await harness({ publicOrigin: 'https://harness.example.com' })
-    const ticket = portal.issue({ os: 'linux' })
+    const ticket = await portal.issue({ os: 'linux' })
 
     const response = await get(origin, ticket.downloadPath)
 
@@ -368,7 +384,7 @@ describe('the routes the portal registers', () => {
 
   it('refuses a pack download that states no origin to dial back to', async () => {
     const { portal, origin } = await harness()
-    const ticket = portal.issue({ os: 'linux' })
+    const ticket = await portal.issue({ os: 'linux' })
     const url = new URL(origin)
     const socket = connect({ host: url.hostname, port: Number(url.port) })
     await once(socket, 'connect')
@@ -396,7 +412,7 @@ describe('the routes the portal registers', () => {
 describe('an agent attaching', () => {
   it('registers the machine it serves and reports it as attached', async () => {
     const { ctx, portal, origin } = await harness()
-    const ticket = portal.issue({ os: 'linux' })
+    const ticket = await portal.issue({ os: 'linux' })
     const script = (await get(origin, ticket.downloadPath)).body
     const token = /DSH_CONNECTOR_TOKEN="([^"]+)"/.exec(script)?.[1] as string
     const attached = new Promise<void>((resolve) => { ctx.once('connector-portal/attached', () => { resolve() }) })
@@ -415,7 +431,7 @@ describe('an agent attaching', () => {
 
   it('serves the target machine\'s files through the registered connector', async () => {
     const { ctx, portal, origin } = await harness()
-    const ticket = portal.issue({ os: 'linux' })
+    const ticket = await portal.issue({ os: 'linux' })
     const script = (await get(origin, ticket.downloadPath)).body
     const token = /DSH_CONNECTOR_TOKEN="([^"]+)"/.exec(script)?.[1] as string
     const attached = new Promise<void>((resolve) => { ctx.once('connector-portal/attached', () => { resolve() }) })
@@ -437,7 +453,7 @@ describe('an agent attaching', () => {
 
   it('drops the connector when its enrollment is revoked', async () => {
     const { ctx, portal, origin } = await harness()
-    const ticket = portal.issue({ os: 'linux' })
+    const ticket = await portal.issue({ os: 'linux' })
     const script = (await get(origin, ticket.downloadPath)).body
     const token = /DSH_CONNECTOR_TOKEN="([^"]+)"/.exec(script)?.[1] as string
     const attached = new Promise<void>((resolve) => { ctx.once('connector-portal/attached', () => { resolve() }) })
@@ -462,13 +478,13 @@ describe('an agent attaching', () => {
 
   it('refuses a machine beyond the configured limit', async () => {
     const { ctx, portal, origin } = await harness({ maxConnectors: 1 })
-    const first = portal.issue({ os: 'linux' })
+    const first = await portal.issue({ os: 'linux' })
     const firstToken = /DSH_CONNECTOR_TOKEN="([^"]+)"/
       .exec((await get(origin, first.downloadPath)).body)?.[1] as string
     const attached = new Promise<void>((resolve) => { ctx.once('connector-portal/attached', () => { resolve() }) })
     await attachAgent(origin, firstToken, 'first', process.cwd())
     await attached
-    const second = portal.issue({ os: 'linux' })
+    const second = await portal.issue({ os: 'linux' })
     const secondToken = /DSH_CONNECTOR_TOKEN="([^"]+)"/
       .exec((await get(origin, second.downloadPath)).body)?.[1] as string
 
@@ -607,7 +623,7 @@ describe('an agent attaching', () => {
   ])('refuses to call %s alive', async (_case, state, failure) => {
     const { portal } = await harness()
     const enrollmentId = state === 'issued'
-      ? portal.issue({ os: 'linux' }).enrollmentId
+      ? (await portal.issue({ os: 'linux' })).enrollmentId
       : 'never-issued' as ConnectorEnrollmentId
 
     expect(await portal.probe({ enrollmentId })).toMatchObject({ alive: false, enrollmentId, failure })
@@ -626,5 +642,56 @@ describe('an agent attaching', () => {
       pending.on('error', () => { resolve() })
       pending.end()
     })).resolves.toBeUndefined()
+  })
+})
+
+describe('surviving a restart', () => {
+  it('restores an enrollment from disk and admits the same agent again', async () => {
+    const storePath = freshStorePath()
+
+    // Issue on one deployment, then tear it down as a restart would.
+    const first = await harness({ storePath })
+    const { token } = await enroll(first.portal, first.origin)
+    await Promise.all(contexts.splice(contexts.indexOf(first.ctx), 1).map(ctx => ctx.fiber.dispose()))
+
+    // A fresh deployment reading the same store already knows the machine.
+    const second = await harness({ storePath })
+    expect((await second.portal.list()).enrollments).toEqual([
+      expect.objectContaining({ status: 'issued' }),
+    ])
+    const attached = new Promise<void>((resolve) => { second.ctx.once('connector-portal/attached', () => { resolve() }) })
+
+    // The agent re-dials with the credential from its saved pack, and the
+    // restarted deployment admits it rather than refusing an unknown token.
+    await attachAgent(second.origin, token, 'build-box', process.cwd())
+    await attached
+
+    expect((await second.portal.list()).enrollments[0]).toMatchObject({ status: 'attached', label: 'build-box' })
+    expect(second.ctx.connectors.list()).toHaveLength(1)
+  })
+
+  it('drops a restored enrollment for good once it is revoked', async () => {
+    const storePath = freshStorePath()
+    const first = await harness({ storePath })
+    const { id } = await enroll(first.portal, first.origin)
+    await first.portal.revoke({ enrollmentId: id })
+    await Promise.all(contexts.splice(contexts.indexOf(first.ctx), 1).map(ctx => ctx.fiber.dispose()))
+
+    const second = await harness({ storePath })
+
+    expect((await second.portal.list()).enrollments).toEqual([])
+  })
+
+  it('defaults the ledger to connectors/enrollments.json under the harness home', async () => {
+    const dshHome = mkdtempSync(join(tmpdir(), 'dsh-connector-home-'))
+    storeDirs.push(dshHome)
+
+    const { portal } = await harness({ dshHome, storePath: undefined })
+    await portal.issue({ os: 'linux' })
+
+    const stored = JSON.parse(readFileSync(join(dshHome, 'connectors', 'enrollments.json'), 'utf8')) as {
+      enrollments: unknown[]
+    }
+    expect(stored.enrollments).toHaveLength(1)
   })
 })

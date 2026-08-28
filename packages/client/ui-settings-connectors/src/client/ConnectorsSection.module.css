@@ -207,8 +207,17 @@
   color: var(--dsw-alias-state-success-primary);
 }
 
-.status[data-status='expired'] {
+.reconnect {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .details {
