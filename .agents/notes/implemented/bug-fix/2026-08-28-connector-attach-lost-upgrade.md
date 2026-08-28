@@ -41,6 +41,10 @@ Nothing about admission changes: an upgrade that arrives intact is admitted or r
 
 `packages/host/connector-portal/tests/portal.spec.ts` drives the real agent loop against the real portal through a proxy that forwards everything except the hop-by-hop upgrade, and asserts the operator's report carries `HTTP 426` and the remedy in full — the truncation the message is sized for is exercised rather than assumed. A second test pins the status and the `Upgrade` response header for the stripped dial, and the existing `404` cases still cover paths the portal does not own.
 
+On the deployment that produced the report, the plain-HTTP dial now prints the diagnosis in place of `404`, and the same pack pointed at that deployment's TLS origin attaches and answers a liveness probe from the same machine and network the failing dial came from. Publishing the connector prefix on a TLS origin and pinning the portal's `publicOrigin` to it is what makes the remedy the message names available there.
+
+That deployment also showed how short an attachment's life is: it pins its attached machine as `connectors.default` in the composition, and writing that pin reloads this plugin, which drops the attachment whose id was just written. The portal README's `Known Limitations` now names the reload as one more thing the in-memory ledger does not survive.
+
 ## Consequences
 
 A connector that cannot attach now says why on the machine that cannot attach. The remaining failure this does not fix is a target with no route to an `https` origin at all; that target still cannot attach, and now reads a message that says so instead of one that blames the endpoint.

@@ -58,6 +58,6 @@ None directly; binding a session to a newly attached target changes the prefix t
 
 - **The probe measures the link, not the machine** — a completed `resolve`/`stat` proves the agent process is answering and its filesystem is readable. It says nothing about the target's load, disk, or whether a command would succeed there.
 - **Chat availability is judged from the composition text** — a preset counts as connector-backed when it names the `@deepseek-ai/dsh-fs-connector` row. A preset that mounts the row behind a condition the portal cannot evaluate reads as ready and fails at the first tool call instead.
-- **No durable ledger** — enrollments do not survive a harness restart, so a long-lived target needs a fresh pack after one.
+- **No durable ledger** — enrollments do not survive a harness restart, so a long-lived target needs a fresh pack after one. A plugin reload counts as one: a deployment that edits its composition to pin an attached machine (`connectors.default`) reloads this plugin with that edit and drops the very attachment the id names, and the id it wrote is dead before it is first read. Such a deployment binds sessions from the Connectors page instead.
 - **One pack per enrollment family** — the script is generated for `linux`, `macos`, or `windows`; there is no signed installer, no service unit, and no unattended-update path.
 - **No per-enrollment scope** — an attached target serves its whole working directory to any session that binds to it; the portal carries no narrower grant.
