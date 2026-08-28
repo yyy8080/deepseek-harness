@@ -43,7 +43,7 @@ Nothing about admission changes: an upgrade that arrives intact is admitted or r
 
 On the deployment that produced the report, the plain-HTTP dial now prints the diagnosis in place of `404`, and the same pack pointed at that deployment's TLS origin attaches and answers a liveness probe from the same machine and network the failing dial came from. Publishing the connector prefix on a TLS origin and pinning the portal's `publicOrigin` to it is what makes the remedy the message names available there.
 
-That deployment also showed how short an attachment's life is: it pins its attached machine as `connectors.default` in the composition, and writing that pin reloads this plugin, which drops the attachment whose id was just written. The portal README's `Known Limitations` now names the reload as one more thing the in-memory ledger does not survive.
+That deployment also showed how short an attachment's life is: it pins its attached machine as `connectors.default` in the composition, and writing that pin reloads this plugin, which drops the attachment whose id was just written. That reload hazard is since narrowed — the enrollment ledger is now durable ([persistent reconnect credentials](../feature/2026-08-28-connector-persistent-reconnect-credentials.md)), so a reload drops only the live socket and the agent re-attaches with the same secret; the portal README's `Known Limitations` records the remaining gap.
 
 ## Consequences
 

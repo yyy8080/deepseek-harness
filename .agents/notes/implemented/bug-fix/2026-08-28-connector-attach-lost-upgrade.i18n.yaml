@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-28-connector-attach-lost-upgrade.md
-2026-08-28-connector-attach-lost-upgrade.md: 6483b631b4d821777cf55735bf157367a0d110ba
-2026-08-28-connector-attach-lost-upgrade.zh.md: 19d91a3444df5bd84482a7f17b06a65fa87e3264
+2026-08-28-connector-attach-lost-upgrade.md: 0369e7f54b6429e27e8032d8c45508ad6ae937ee
+2026-08-28-connector-attach-lost-upgrade.zh.md: bee55eb901a1ce6334d495d8a91d71ce5c53292e

@@ -43,7 +43,7 @@ dsh-connector-agent dialling http://119.45.184.191/connector/attach (linux, work
 
 在引出这份报告的那套部署上，明文 HTTP 的拨入如今打印出这份诊断而不再是 `404`；同一份 pack 指向该部署的 TLS 源后，从当初拨失败的同一台机器、同一个网络接入成功，并回应了测活探测。把连接器前缀发布到 TLS 源上、并将入口的 `publicOrigin` 钉到那里，正是让消息所指的那条对策在此可用的前提。
 
-那套部署还顺带暴露了一条接入的寿命有多短：它把已接入的机器钉为组合里的 `connectors.default`，而写下这个钉子会重载本插件，于是刚刚写下其 id 的那条接入被一并丢掉。入口 README 的"已知限制"如今把重载也列为内存账本熬不过的一件事。
+那套部署还顺带暴露了一条接入的寿命有多短：它把已接入的机器钉为组合里的 `connectors.default`，而写下这个钉子会重载本插件，于是刚刚写下其 id 的那条接入被一并丢掉。这条重载隐患此后被收窄了——登记账本现在是持久的（[持久重连密钥](../feature/2026-08-28-connector-persistent-reconnect-credentials.zh.md)），因此一次重载只丢掉活跃 socket，agent 会用同一密钥重新接入；入口 README 的"已知限制"记录剩下的缺口。
 
 ## Consequences
 

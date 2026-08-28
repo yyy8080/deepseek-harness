@@ -161,11 +161,13 @@ The connector portal service (`ctx.connectorPortal`). It owns the enrollment led
 
 ```ts cordis-catalog
 /**
- * Mint one enrollment and describe the pack the browser should fetch.
+ * Mint one enrollment and describe the pack the browser should fetch. The
+ * new credential is persisted before the ticket is returned, so a machine
+ * enrolled just before a restart survives it.
  * @param request - the target family the user picked.
  * @returns the download path, file name, and download deadline.
  */
-@Remote('issue') issue(request: ConnectorPackRequest): ConnectorPackTicket
+@Remote('issue') async issue(request: ConnectorPackRequest): Promise<ConnectorPackTicket>
 
 /**
  * Read the current enrollment ledger and whether a machine in it can host a

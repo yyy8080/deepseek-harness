@@ -96,7 +96,6 @@ const STATUS_KEYS = {
   issued: 'statusIssued',
   downloaded: 'statusDownloaded',
   attached: 'statusAttached',
-  expired: 'statusExpired',
 } satisfies Record<ConnectorEnrollmentStatus, ConnectorsLocaleKey>
 
 /**
@@ -284,7 +283,9 @@ export function ConnectorsSection(props: ConnectorsSectionProps): ReactNode {
             {t('needsNode')}
           </p>
           <p className={css.hint}>
-            {t('ticketHint', { expires: new Date(ticket.expiresAt).toLocaleTimeString() })}
+            {ticket.expiresAt === null
+              ? t('ticketHintPermanent')
+              : t('ticketHint', { expires: new Date(ticket.expiresAt).toLocaleTimeString() })}
           </p>
         </div>
       ) : null}
@@ -313,6 +314,9 @@ export function ConnectorsSection(props: ConnectorsSectionProps): ReactNode {
                   <strong>{enrollment.label ?? enrollment.os}</strong>
                   <span className={css.status} data-status={enrollment.status}>
                     {t(STATUS_KEYS[enrollment.status])}
+                  </span>
+                  <span className={css.reconnect} data-connector-reconnect>
+                    {t('reconnectBadge')}
                   </span>
                   {attached ? (
                     <button

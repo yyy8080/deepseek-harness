@@ -7,6 +7,7 @@
 import { describe, expect, it } from 'vitest'
 import { ConnectorEnrollments, enrollmentToken } from '../src/enrollment.ts'
 import type { ConnectorEnrollment } from '../src/enrollment.ts'
+import type { PersistedEnrollment } from '../src/store.ts'
 
 const TTL_MS = 1000
 
@@ -40,6 +41,10 @@ describe('issuing', () => {
   it('closes the download window a TTL after issue', () => {
     expect(ledger().issue('windows', 5000).expiresAt).toBe(5000 + TTL_MS)
   })
+
+  it('leaves the download open when the TTL is zero', () => {
+    expect(new ConnectorEnrollments(0, 2).issue('linux', 5000).expiresAt).toBeNull()
+  })
 })
 
 describe('claiming a download', () => {
@@ -57,6 +62,13 @@ describe('claiming a download', () => {
     const enrollment = enrollments.issue('linux', 0)
 
     expect(enrollments.claimDownload(String(enrollment.id), TTL_MS)).toBeUndefined()
+  })
+
+  it('keeps answering forever when the download never expires', () => {
+    const enrollments = new ConnectorEnrollments(0, 2)
+    const enrollment = enrollments.issue('linux', 0)
+
+    expect(enrollments.claimDownload(String(enrollment.id), 10 ** 12)).toBe(enrollment)
   })
 
   it('does not answer for an unknown id', () => {
@@ -144,15 +156,17 @@ describe('the ledger the browser reads', () => {
     const attached = enrollments.issue('macos', 0)
     attach(attached, 'build-box')
 
-    expect(enrollments.view(0).map(row => row.status)).toEqual(['issued', 'downloaded', 'attached'])
-    expect(enrollments.view(TTL_MS).map(row => row.status)).toEqual(['expired', 'expired', 'attached'])
-    expect(enrollments.view(0)[2]).toMatchObject({
+    expect(enrollments.view().map(row => row.status)).toEqual(['issued', 'downloaded', 'attached'])
+    // A closed download window never changes the machine's word: the reconnect
+    // credential does not expire, so a downloaded-but-idle record stays
+    // "downloaded" rather than reading as expired.
+    expect(enrollments.view()[2]).toMatchObject({
       connectorId: String(attached.id),
       label: 'build-box',
       workdir: '/srv/work',
       os: 'macos',
     })
-    expect(enrollments.view(0)[0]).toMatchObject({ connectorId: String(issued.id), label: null, workdir: null })
+    expect(enrollments.view()[0]).toMatchObject({ connectorId: String(issued.id), label: null, workdir: null })
   })
 
   it('forgets one record and reports whether it was still known', () => {
@@ -164,5 +178,35 @@ describe('the ledger the browser reads', () => {
     expect(enrollments.remove(String(enrollment.id))).toBeUndefined()
     expect(enrollments.get(String(enrollment.id))).toBeUndefined()
     expect(enrollments.all()).toEqual([])
+  })
+})
+
+describe('the durable credential set', () => {
+  it('reports the durable half of every enrollment for the store', () => {
+    const enrollments = ledger()
+    const first = enrollments.issue('linux', 100)
+    const second = enrollments.issue('windows', 200)
+
+    expect(enrollments.snapshot()).toEqual([
+      { id: String(first.id), secret: first.secret, os: 'linux', issuedAt: 100 },
+      { id: String(second.id), secret: second.secret, os: 'windows', issuedAt: 200 },
+    ])
+  })
+
+  it('admits a re-dial of a restored enrollment with the same secret', () => {
+    const restored: PersistedEnrollment[] = [{ id: 'box-1', secret: 'kept-secret', os: 'linux', issuedAt: 42 }]
+    const enrollments = new ConnectorEnrollments(TTL_MS, 2, restored)
+
+    const record = enrollments.get('box-1')
+    expect(record).toMatchObject({ os: 'linux', issuedAt: 42, secret: 'kept-secret' })
+    expect(enrollments.admitAttach('box-1.kept-secret')).toMatchObject({ admitted: true })
+    // The download deadline is recomputed from the current TTL, not restored.
+    expect(record?.expiresAt).toBe(42 + TTL_MS)
+  })
+
+  it('restores a non-expiring download window when the TTL is zero', () => {
+    const enrollments = new ConnectorEnrollments(0, 2, [{ id: 'box-2', secret: 's', os: 'macos', issuedAt: 7 }])
+
+    expect(enrollments.get('box-2')?.expiresAt).toBeNull()
   })
 })

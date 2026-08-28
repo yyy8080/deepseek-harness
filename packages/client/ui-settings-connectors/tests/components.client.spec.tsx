@@ -45,7 +45,6 @@ function machine(overrides: Partial<Enrollment> = {}): Enrollment {
     label: 'build-box',
     workdir: '/srv/work',
     issuedAt: 0,
-    expiresAt: 0,
     ...overrides,
   } as Enrollment
 }
@@ -112,6 +111,16 @@ describe('the Connectors page', () => {
     expect(face.list).toHaveBeenCalledTimes(2)
   })
 
+  it('tells the user a non-expiring key auto-reconnects instead of showing a deadline', async () => {
+    mount({
+      issue: vi.fn<ConnectorsSectionInjected['issue']>().mockResolvedValue({ ...TICKET, expiresAt: null }),
+    })
+
+    fireEvent.click(screen.getByText(en.platformLinux))
+
+    await waitFor(() => { expect(screen.queryByText(en.ticketHintPermanent)).not.toBeNull() })
+  })
+
   it('copies the command and says so, then goes quiet again', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const face = mount()
@@ -167,6 +176,9 @@ describe('the Connectors page', () => {
     expect(document.querySelector('[data-connector-id]')?.textContent).toBe('enrol-1')
     expect(screen.queryByText('/srv/work')).not.toBeNull()
     expect(screen.queryByText(en.statusAttached)).not.toBeNull()
+    // Every enrolled machine advertises that its credential is permanent and
+    // reconnects on its own, which is the fact this page now promises.
+    expect(document.querySelectorAll('[data-connector-reconnect]')).toHaveLength(2)
     // An enrollment nothing has dialled in for shows its platform instead of a
     // machine name, and no connector id a session could bind.
     expect(screen.queryByText(en.statusIssued)).not.toBeNull()

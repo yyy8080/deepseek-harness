@@ -1,19 +1,22 @@
 /**
  * The enrollment ledger: one record per target machine a user has generated a
- * pack for, from the moment the pack is issued until the enrollment is revoked
- * or the harness process ends.
+ * pack for, from the moment the pack is issued until the user revokes it.
  *
- * An enrollment separates two lifetimes deliberately. The pack DOWNLOAD is
+ * An enrollment separates two lifetimes deliberately. The pack DOWNLOAD may be
  * short-lived, because the file carries the secret and a stale link in a chat
- * log or shell history is the realistic leak. The ATTACHMENT it authorizes is
- * not: a target left running should survive a laptop sleeping, a network
- * moving, and the deployment restarting its own upstream, without asking the
- * user to re-download anything.
+ * log or shell history is the realistic leak; a deployment can also leave it
+ * open. The reconnect credential the enrollment mints is never short-lived: a
+ * target left running should survive a laptop sleeping, a network moving, the
+ * deployment restarting, and this plugin reloading, without asking the user to
+ * re-download anything. The secret is the machine's standing credential until
+ * the user removes it.
  *
- * Records live in memory. A harness restart drops every enrollment, and each
- * agent's retry loop then reports a refused attachment until the user issues a
- * new pack — visible, rather than a target silently serving a deployment that
- * no longer knows why.
+ * The credential set is durable: {@link ConnectorEnrollments} is constructed
+ * from whatever the store restored and reports its current set back for the
+ * portal to persist. The live attachment — a socket and its connector
+ * registration — is the one part no restart can carry; the agent's own retry
+ * loop re-dials and re-attaches with the same secret once the deployment is
+ * back up.
  *
  * @module @deepseek-ai/dsh-host-connector-portal/enrollment
  */
@@ -21,6 +24,7 @@
 import { Buffer } from 'node:buffer'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
 import type { ConnectorEnrollmentId, ConnectorEnrollmentView, ConnectorPackOs } from './types.ts'
+import type { PersistedEnrollment } from './store.ts'
 
 /** Bytes of entropy behind an enrollment id and behind its secret. */
 const SECRET_BYTES = 24
@@ -44,8 +48,12 @@ export interface ConnectorEnrollment {
   readonly secret: string
   readonly os: ConnectorPackOs
   readonly issuedAt: number
-  /** Epoch milliseconds after which the pack download stops answering. */
-  readonly expiresAt: number
+  /**
+   * Epoch milliseconds after which the pack download stops answering, or
+   * `null` when the download never expires. It gates only the download of the
+   * script file; the reconnect credential the pack carries never expires.
+   */
+  readonly expiresAt: number | null
   /** Epoch milliseconds of the first pack download, or undefined. */
   downloadedAt?: number
   /** The live attachment, while one agent is connected. */
@@ -95,15 +103,38 @@ export function enrollmentToken(enrollment: ConnectorEnrollment): string {
   return `${String(enrollment.id)}.${enrollment.secret}`
 }
 
+/** Recompute one restored record's download deadline from the current TTL. */
+function expiryOf(packTtlMs: number, issuedAt: number): number | null {
+  return packTtlMs === 0 ? null : issuedAt + packTtlMs
+}
+
 /** The enrollment ledger of one deployment. */
 export class ConnectorEnrollments {
   private readonly records = new Map<string, ConnectorEnrollment>()
 
   /**
-   * @param packTtlMs - how long a freshly issued pack stays downloadable.
+   * @param packTtlMs - how long a freshly issued pack stays downloadable; `0`
+   *   leaves the download open until the enrollment is revoked.
    * @param maxAttached - how many targets may be attached at once.
+   * @param restored - the durable half of every enrollment the store held,
+   *   restored so a re-dial after a restart is admitted with the same secret.
    */
-  constructor(private readonly packTtlMs: number, private readonly maxAttached: number) {}
+  constructor(
+    private readonly packTtlMs: number,
+    private readonly maxAttached: number,
+    restored: readonly PersistedEnrollment[] = [],
+  ) {
+    for (const record of restored) {
+      this.records.set(record.id, {
+        id: record.id as ConnectorEnrollmentId,
+        secret: record.secret,
+        os: record.os,
+        issuedAt: record.issuedAt,
+        expiresAt: expiryOf(this.packTtlMs, record.issuedAt),
+        attachGeneration: 0,
+      })
+    }
+  }
 
   /**
    * Record one new target machine and mint its credentials.
@@ -117,7 +148,7 @@ export class ConnectorEnrollments {
       secret: mintSecret(),
       os,
       issuedAt: now,
-      expiresAt: now + this.packTtlMs,
+      expiresAt: expiryOf(this.packTtlMs, now),
       attachGeneration: 0,
     }
     this.records.set(String(enrollment.id), enrollment)
@@ -132,7 +163,8 @@ export class ConnectorEnrollments {
    */
   claimDownload(id: string, now: number): ConnectorEnrollment | undefined {
     const enrollment = this.records.get(id)
-    if (enrollment === undefined || now >= enrollment.expiresAt) return undefined
+    if (enrollment === undefined) return undefined
+    if (enrollment.expiresAt !== null && now >= enrollment.expiresAt) return undefined
     enrollment.downloadedAt ??= now
     return enrollment
   }
@@ -192,27 +224,43 @@ export class ConnectorEnrollments {
   }
 
   /**
+   * The durable half of every enrollment, for the portal to persist. It omits
+   * the live attachment and the recomputed download deadline, keeping exactly
+   * the credential a re-dial after a restart needs.
+   * @returns one persisted record per enrollment, oldest first.
+   */
+  snapshot(): PersistedEnrollment[] {
+    return this.all().map(enrollment => ({
+      id: String(enrollment.id),
+      secret: enrollment.secret,
+      os: enrollment.os,
+      issuedAt: enrollment.issuedAt,
+    }))
+  }
+
+  /**
    * Project the ledger onto what the browser renders.
-   * @param now - current epoch milliseconds, deciding which packs read as expired.
    * @returns one view per enrollment, oldest first.
    */
-  view(now: number): ConnectorEnrollmentView[] {
+  view(): ConnectorEnrollmentView[] {
     return this.all().map(enrollment => ({
       enrollmentId: enrollment.id,
       connectorId: String(enrollment.id),
       os: enrollment.os,
-      status: statusOf(enrollment, now),
+      status: statusOf(enrollment),
       label: enrollment.attachment?.label ?? null,
       workdir: enrollment.attachment?.workdir ?? null,
       issuedAt: enrollment.issuedAt,
-      expiresAt: enrollment.expiresAt,
     }))
   }
 }
 
-/** Which of the four lifecycle words describes one record right now. */
-function statusOf(enrollment: ConnectorEnrollment, now: number): ConnectorEnrollmentView['status'] {
+/**
+ * Which lifecycle word describes one record right now. The credential never
+ * expires, so a record is only ever waiting for its pack to be downloaded,
+ * waiting for its agent to dial in, or attached.
+ */
+function statusOf(enrollment: ConnectorEnrollment): ConnectorEnrollmentView['status'] {
   if (enrollment.attachment !== undefined) return 'attached'
-  if (now >= enrollment.expiresAt) return 'expired'
   return enrollment.downloadedAt === undefined ? 'issued' : 'downloaded'
 }

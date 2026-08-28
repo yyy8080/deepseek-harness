@@ -28,12 +28,14 @@
 
 import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
+import { join, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex, Readable } from 'node:stream'
 import type { Socket } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { ConnectorLink } from '@deepseek-ai/dsh-connector'
 import { ConnectorId } from '@deepseek-ai/dsh-connector'
 // Type-only: pulls the agent-preset roster's Context merge (ctx.agentPresets),
@@ -51,6 +53,7 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from 'zod'
 import { ConnectorEnrollments, enrollmentToken } from './enrollment.ts'
 import type { ConnectorAttachDecision } from './enrollment.ts'
+import { ConnectorEnrollmentStore } from './store.ts'
 import { requestOrigin, singleHeader } from './origin.ts'
 import {
   assertPackOrigin,
@@ -73,6 +76,8 @@ import type {
 export type * from './types.ts'
 export { ConnectorEnrollments, enrollmentToken } from './enrollment.ts'
 export type { ConnectorAttachDecision, ConnectorAttachRefusal, ConnectorEnrollment } from './enrollment.ts'
+export { ConnectorEnrollmentStore, STORE_VERSION } from './store.ts'
+export type { PersistedEnrollment } from './store.ts'
 export {
   assertPackOrigin,
   packContentType,
@@ -87,10 +92,27 @@ export { requestOrigin, singleHeader } from './origin.ts'
 export interface Config {
   /** Route prefix every portal path hangs under. */
   basePath?: string
-  /** How long a freshly issued pack stays downloadable, in milliseconds. */
+  /**
+   * How long a freshly issued pack stays downloadable, in milliseconds. `0`
+   * leaves the download open until the enrollment is revoked. It gates the
+   * download of the script file only; the reconnect credential the pack
+   * carries never expires either way.
+   */
   packTtlMs?: number
   /** How many target machines may be attached at once. */
   maxConnectors?: number
+  /**
+   * Absolute path of the JSON file the reconnect-credential ledger is
+   * persisted to. Left unset, it lives at `connectors/enrollments.json` under
+   * the harness home, so enrollments survive a restart or plugin reload and an
+   * agent re-dials with the same secret.
+   */
+  storePath?: string
+  /**
+   * Harness home the credential store lives under when `storePath` is omitted.
+   * Defaults to `$DSH_HOME` or `~/.dsh`.
+   */
+  dshHome?: string
   /**
    * Absolute origin the generated packs dial back to. Leave it unset to derive
    * the origin from each download request, which is what a deployment behind an
@@ -180,8 +202,10 @@ export class ConnectorPortal extends TypertRemoteService {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
     basePath: z.string().default('/connector'),
-    packTtlMs: z.natural().default(1_800_000),
+    packTtlMs: z.natural().default(0),
     maxConnectors: z.natural().default(8),
+    storePath: z.string(),
+    dshHome: z.string(),
     publicOrigin: z.string(),
     agentProgramPath: z.string().default(BUNDLED_AGENT_PROGRAM),
     chatPreset: z.string().default('connector'),
@@ -189,6 +213,7 @@ export class ConnectorPortal extends TypertRemoteService {
   })
 
   private readonly enrollments: ConnectorEnrollments
+  private readonly store: ConnectorEnrollmentStore
   private readonly basePath: string
   private readonly publicOrigin: string | undefined
   private readonly agentProgramPath: string
@@ -202,7 +227,15 @@ export class ConnectorPortal extends TypertRemoteService {
     this.agentProgramPath = config.agentProgramPath as string
     this.chatPreset = config.chatPreset as string
     this.probeTimeoutMs = config.probeTimeoutMs as number
-    this.enrollments = new ConnectorEnrollments(config.packTtlMs as number, config.maxConnectors as number)
+    this.store = new ConnectorEnrollmentStore(resolveStorePath(config))
+    // Restore the credential set before any route answers, so a target that
+    // dials in the moment the deployment is back up is admitted with the same
+    // secret rather than refused as unknown.
+    this.enrollments = new ConnectorEnrollments(
+      config.packTtlMs as number,
+      config.maxConnectors as number,
+      this.store.loadSync(),
+    )
 
     ctx.effect(() => ctx.webServer.register({
       kind: 'prefix',
@@ -225,13 +258,16 @@ export class ConnectorPortal extends TypertRemoteService {
   }
 
   /**
-   * Mint one enrollment and describe the pack the browser should fetch.
+   * Mint one enrollment and describe the pack the browser should fetch. The
+   * new credential is persisted before the ticket is returned, so a machine
+   * enrolled just before a restart survives it.
    * @param request - the target family the user picked.
    * @returns the download path, file name, and download deadline.
    */
   @Remote('issue')
-  issue(request: ConnectorPackRequest): ConnectorPackTicket {
+  async issue(request: ConnectorPackRequest): Promise<ConnectorPackTicket> {
     const enrollment = this.enrollments.issue(request.os, Date.now())
+    await this.store.save(this.enrollments.snapshot())
     const downloadPath = `${this.basePath}/pack/${String(enrollment.id)}`
     return {
       enrollmentId: enrollment.id,
@@ -251,7 +287,7 @@ export class ConnectorPortal extends TypertRemoteService {
    */
   @Remote('list')
   async list(): Promise<ConnectorPortalSnapshot> {
-    return { enrollments: this.enrollments.view(Date.now()), chat: await this.chatAvailability() }
+    return { enrollments: this.enrollments.view(), chat: await this.chatAvailability() }
   }
 
   /**
@@ -329,6 +365,7 @@ export class ConnectorPortal extends TypertRemoteService {
   async revoke(request: ConnectorRevokeRequest): Promise<ConnectorRevokeResult> {
     const enrollment = this.enrollments.remove(String(request.enrollmentId))
     if (enrollment === undefined) return { revoked: false }
+    await this.store.save(this.enrollments.snapshot())
     await enrollment.attachment?.release()
     return { revoked: true }
   }
@@ -557,6 +594,19 @@ function reply(
 ): void {
   res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', ...headers })
   res.end(body)
+}
+
+/**
+ * Resolve where the reconnect-credential ledger is persisted: an explicit
+ * `storePath` wins, otherwise `connectors/enrollments.json` under the harness
+ * home. Defaulting is one explicit step here rather than a fallback buried in
+ * the store.
+ * @param config - the plugin config carrying the optional overrides.
+ * @returns the absolute store-file path.
+ */
+function resolveStorePath(config: Config): string {
+  if (config.storePath !== undefined) return resolvePath(config.storePath)
+  return join(resolveDshHome(config.dshHome), 'connectors', 'enrollments.json')
 }
 
 /** Refuse a prefix that would not compose into the documented paths. */
