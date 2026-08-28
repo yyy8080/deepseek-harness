@@ -6,10 +6,10 @@
 
 import { Buffer } from 'node:buffer'
 import { once } from 'node:events'
-import { request as httpRequest } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import type { IncomingMessage } from 'node:http'
 import { connect } from 'node:net'
-import type { Socket } from 'node:net'
+import type { AddressInfo, Socket } from 'node:net'
 import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -22,7 +22,7 @@ import {
   CONNECTOR_UPGRADE_PROTOCOL,
   encodeFrame,
 } from '@deepseek-ai/dsh-connector/protocol'
-import { createConnectorHost, serveConnectorSocket } from '@deepseek-ai/dsh-connector-host'
+import { createConnectorHost, runConnectorAttachment, serveConnectorSocket } from '@deepseek-ai/dsh-connector-host'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import ConnectorPortal from '../src/index.ts'
@@ -164,6 +164,31 @@ async function enroll(portal: ConnectorPortal, origin: string): Promise<{ id: Co
   return { id: ticket.enrollmentId, token: /DSH_CONNECTOR_TOKEN="([^"]+)"/.exec(script)?.[1] as string }
 }
 
+/**
+ * Put an intercepting plain-HTTP middlebox in front of the portal: it forwards
+ * the request and its end-to-end headers, and drops the hop-by-hop upgrade
+ * negotiation it does not implement.
+ * @param origin - the portal origin to forward to.
+ * @returns the origin agents dial instead.
+ */
+async function strippingProxy(origin: string): Promise<string> {
+  const portal = new URL(origin)
+  const proxy = createServer((req, res) => {
+    const { upgrade: _upgrade, connection: _connection, ...headers } = req.headers
+    const forward = httpRequest(
+      { host: portal.hostname, port: portal.port, path: req.url as string, method: req.method as string, headers },
+      (answer) => {
+        res.writeHead(answer.statusCode as number, answer.headers)
+        answer.pipe(res)
+      },
+    )
+    req.pipe(forward)
+  })
+  stopAgents.push(async () => { await new Promise<void>((closed) => { proxy.close(() => { closed() }) }) })
+  await new Promise<void>((listening) => { proxy.listen(0, '127.0.0.1', () => { listening() }) })
+  return `http://127.0.0.1:${String((proxy.address() as AddressInfo).port)}`
+}
+
 /** Read one socket to end of stream. */
 async function collect(socket: Socket): Promise<Buffer[]> {
   const chunks: Buffer[] = []
@@ -284,6 +309,44 @@ describe('the routes the portal registers', () => {
     const { origin } = await harness()
 
     expect((await get(origin, path)).status).toBe(status)
+  })
+
+  it('tells a dial that lost its upgrade in transit why the endpoint did not answer it', async () => {
+    const { origin } = await harness()
+
+    // What an intercepting proxy leaves of an agent's dial: the token still
+    // arrives, the hop-by-hop upgrade does not.
+    const response = await fetch(`${origin}/connector/attach`, {
+      headers: { [CONNECTOR_TOKEN_HEADER]: 'irrelevant' },
+    })
+
+    expect(response.status).toBe(426)
+    expect(response.headers.get('upgrade')).toBe(CONNECTOR_UPGRADE_PROTOCOL)
+    expect(await response.text()).toContain('strips the hop-by-hop Upgrade and Connection headers')
+  })
+
+  it('hands the whole diagnosis to an operator whose agent dials through such a proxy', async () => {
+    const { portal, origin } = await harness()
+    const { token } = await enroll(portal, origin)
+    const proxied = await strippingProxy(origin)
+    const link = await createConnectorHost({ workdir: PACKAGE_DIR })
+    const stop = new AbortController()
+    const reports: string[] = []
+
+    await runConnectorAttachment({
+      url: `${proxied}/connector/attach`,
+      token,
+      label: 'behind-a-proxy',
+      link,
+      retryDelayMs: 1,
+      report: (message) => { reports.push(message); stop.abort() },
+    }, stop.signal)
+    await link.close()
+
+    // The agent prints a bounded slice of the refusal body, so a diagnosis is
+    // only useful if its remedy survives that far.
+    expect(reports).toEqual([expect.stringContaining('HTTP 426')])
+    expect(reports[0]).toContain('dial this deployment over https instead')
   })
 
   it('refuses a method other than GET or HEAD', async () => {

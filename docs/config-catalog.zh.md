@@ -971,7 +971,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/connector-portal/src/index.ts:84`](../packages/host/connector-portal/src/index.ts)
+来源：[`packages/host/connector-portal/src/index.ts:87`](../packages/host/connector-portal/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 

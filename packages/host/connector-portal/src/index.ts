@@ -16,7 +16,10 @@
  *   authenticated surface and the download itself is not.
  * - `GET <basePath>/agent.mjs` serves the bundled agent program. It carries no
  *   secret — it is the same code for every target — and the pack fetches it.
- * - `UPGRADE <basePath>/attach` accepts an agent's reversed connection.
+ * - `UPGRADE <basePath>/attach` accepts an agent's reversed connection. The
+ *   same path answers `426 Upgrade Required` to a request that reaches it
+ *   without an upgrade, which is what an intermediary that dropped the
+ *   hop-by-hop headers leaves behind.
  * - `connectorPortal` answers `issue`, `list`, `probe`, and `revoke` for the
  *   browser.
  *
@@ -136,6 +139,20 @@ const BUNDLED_AGENT_PROGRAM = fileURLToPath(
 
 /** Deadline for the connector handshake once an agent's upgrade is accepted. */
 const ATTACH_HANDSHAKE_TIMEOUT_MS = 10_000
+
+/**
+ * What the attach path answers a request that reached it as an ordinary GET.
+ *
+ * `Upgrade` and `Connection` are hop-by-hop headers, so an intermediary is
+ * free to drop them, and an intercepting proxy on plain HTTP routinely does.
+ * The agent's dial then arrives here as a plain request, node never raises its
+ * `upgrade` event, and the endpoint the agent was looking for is not the one
+ * answering. Naming that is the difference between an operator seeing a route
+ * that does not exist and an operator seeing a route the network truncated.
+ */
+const ATTACH_WITHOUT_UPGRADE = 'connector attach needs an HTTP upgrade and this request carries none.'
+  + ' A plain-HTTP intermediary strips the hop-by-hop Upgrade and Connection headers;'
+  + ' dial this deployment over https instead.'
 
 /** The admitted half of an attach decision, which is all adoption ever sees. */
 type AdmittedAttach = Extract<ConnectorAttachDecision, { admitted: true }>
@@ -372,6 +389,12 @@ export class ConnectorPortal extends TypertRemoteService {
       this.servePack(req.headers, suffix.slice('/pack/'.length), res)
       return
     }
+    if (suffix === '/attach') {
+      reply(res, 426, 'text/plain; charset=utf-8', ATTACH_WITHOUT_UPGRADE, {
+        upgrade: CONNECTOR_UPGRADE_PROTOCOL,
+      })
+      return
+    }
     reply(res, 404, 'text/plain; charset=utf-8', 'not found')
   }
 
@@ -524,9 +547,15 @@ function rejectOnAbort(signal: AbortSignal, message: string): Promise<never> {
   })
 }
 
-/** Write one short response body. */
-function reply(res: ServerResponse, status: number, type: string, body: string): void {
-  res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' })
+/** Write one short response body, plus any headers the status itself requires. */
+function reply(
+  res: ServerResponse,
+  status: number,
+  type: string,
+  body: string,
+  headers: Readonly<Record<string, string>> = {},
+): void {
+  res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', ...headers })
   res.end(body)
 }
 
