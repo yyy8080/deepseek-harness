@@ -40,6 +40,9 @@
       "path": "../../feedback/message-feedback"
     },
     {
+      "path": "../../host/connector-portal"
+    },
+    {
       "path": "../../host/plugin-inventory"
     },
     {

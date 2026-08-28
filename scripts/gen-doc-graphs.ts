@@ -84,6 +84,7 @@ const GROUP_ORDER = [
   'spill',
   'todo',
   'plan',
+  'marketplace',
   'cordis',
   'hooks',
   'session-persistence',
@@ -304,6 +305,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Folds logged plan/mode state, flushes user selections at turn boundaries, renders deployment-owned guidance, registers /plan, and keeps the plan-exit schema stable across transitions.',
   },
   {
+    key: 'pluginRegistry',
+    pkg: 'plugin-registry',
+    title: 'Plugin catalog seam',
+    mode: 'seam',
+    implementations: ['plugin-registry-static'],
+    consumers: ['dsh'],
+    note: 'Merges every registered catalog provider into one id-keyed index and owns search, version selection, and update detection; dsh marketplace installs a resolved release through dsh-plugin-install.',
+  },
+  {
     key: 'agentPresets',
     pkg: 'agent-presets',
     title: 'Per-session agent composition',
@@ -468,6 +478,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['connector-host', 'connector-tcp'],
     consumers: ['fs-connector', 'subprocess-connector'],
     note: 'Registers the machines a deployment can execute on and resolves which one the calling session bound; the two capability providers put ctx.fs and ctx.subprocess on that machine.',
+  },
+  {
+    key: 'connectorPortal',
+    pkg: 'connector-portal',
+    title: 'Connector enrollment and download portal',
+    mode: 'core',
+    consumers: ['client-ui-settings-connectors'],
+    note: 'Mints an enrollment, serves the start script and agent bundle it names, and registers the machine that dials the attach upgrade back into ctx.connectors.',
   },
   {
     key: 'fs',

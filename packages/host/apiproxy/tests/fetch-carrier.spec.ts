@@ -768,6 +768,29 @@ describe('envelope observation', () => {
   })
 })
 
+describe('mintRpcId', () => {
+  it('mints a v4 rpcId on an insecure origin, where crypto.randomUUID is absent', async () => {
+    class Probe extends AbstractApiClient {
+      minted: string[] = []
+      protected async doFetch(_input: URL, init?: RequestInit): Promise<Response> {
+        if (typeof init?.body !== 'string') throw new TypeError('expected a JSON string request body')
+        const body = JSON.parse(init.body) as { rpcId: string }
+        this.minted.push(body.rpcId)
+        return Response.json({ type: 'server-response', rpcId: body.rpcId, result: { ok: true, value: { items: [] } } })
+      }
+    }
+    const platform = globalThis.crypto
+    vi.stubGlobal('crypto', { getRandomValues: (bytes: Uint8Array<ArrayBuffer>) => platform.getRandomValues(bytes) })
+    try {
+      const probe = new Probe()
+      await probe.sessions.list({})
+      expect(probe.minted[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe('resolveBase', () => {
   it('prefers a real location.origin and falls back to the internal authority', async () => {
     class Probe extends AbstractApiClient {

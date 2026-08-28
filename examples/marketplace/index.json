@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "plugins": [
+    {
+      "id": "dsh-plugin-hello-marketplace",
+      "displayName": "Hello Marketplace",
+      "description": "A minimal profile bundle that mounts one greeting plugin, used to exercise the marketplace install flow end to end.",
+      "publisher": "DeepSeek Harness examples",
+      "homepage": "https://github.com/deepseek-ai/deepseek-harness/tree/master/examples/marketplace",
+      "capabilities": {
+        "tools": [],
+        "filesystem": "none",
+        "network": "none",
+        "subprocess": false
+      },
+      "releases": [
+        {
+          "version": "0.1.0",
+          "tarball": "./dsh-plugin-hello-marketplace-0.1.0.tgz",
+          "publishedAt": "2026-08-26T00:00:00.000Z"
+        }
+      ]
+    }
+  ]
+}

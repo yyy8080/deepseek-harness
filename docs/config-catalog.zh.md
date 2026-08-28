@@ -575,7 +575,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/connector/connector-host/src/index.ts:35`](../packages/connector/connector-host/src/index.ts)
+来源：[`packages/connector/connector-host/src/index.ts:43`](../packages/connector/connector-host/src/index.ts)
 
 <a id="deepseek-aidsh-connector-tcp"></a>
 
@@ -903,6 +903,40 @@ export interface Config {
 ```
 
 来源：[`packages/host/apiproxy/src/index.ts:41`](../packages/host/apiproxy/src/index.ts)
+
+<a id="deepseek-aidsh-host-connector-portal"></a>
+
+## `@deepseek-ai/dsh-host-connector-portal`
+
+需要：`connectors` · `webServer`
+
+```ts config-catalog
+/** Deployment configuration of the connector portal. */
+export interface Config {
+  /** Route prefix every portal path hangs under. */
+  basePath?: string
+  /** How long a freshly issued pack stays downloadable, in milliseconds. */
+  packTtlMs?: number
+  /** How many target machines may be attached at once. */
+  maxConnectors?: number
+  /**
+   * Absolute origin the generated packs dial back to. Leave it unset to derive
+   * the origin from each download request, which is what a deployment behind an
+   * ordinary reverse proxy wants; set it when the proxy rewrites the Host it
+   * forwards.
+   */
+  publicOrigin?: string
+  /**
+   * Absolute path of the single-file agent program `<basePath>/agent.mjs`
+   * serves. It defaults to the bundle `@deepseek-ai/dsh-connector-host` ships,
+   * which `pnpm run build` produces; a deployment that publishes its own build
+   * of the agent points this at that file instead.
+   */
+  agentProgramPath?: string
+}
+```
+
+来源：[`packages/host/connector-portal/src/index.ts:77`](../packages/host/connector-portal/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -1612,6 +1646,31 @@ export interface PlanModeConfig {
 ```
 
 来源：[`packages/plan/plan-mode/src/index.ts:70`](../packages/plan/plan-mode/src/index.ts)
+
+<a id="deepseek-aidsh-plugin-registry-static"></a>
+
+## `@deepseek-ai/dsh-plugin-registry-static`
+
+需要：`pluginRegistry`
+
+```ts config-catalog
+/** Plugin config. */
+export interface Config {
+  /**
+   * The index document: an `http(s):` URL, a `file:` URL, or a filesystem
+   * path. A relative path resolves against `base`.
+   */
+  index: string
+  /**
+   * The directory a relative `index` path resolves against. Defaults to the
+   * process working directory, which is what a hand-run command line means by
+   * a relative path.
+   */
+  base?: string
+}
+```
+
+来源：[`packages/marketplace/plugin-registry-static/src/index.ts:29`](../packages/marketplace/plugin-registry-static/src/index.ts)
 
 <a id="deepseek-aidsh-pwsh-local"></a>
 
@@ -3328,6 +3387,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-ui-reference`（[`packages/client/ui-reference/src/index.ts`](../packages/client/ui-reference/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-renderer`（[`packages/client/ui-renderer/src/index.ts`](../packages/client/ui-renderer/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings`（[`packages/client/ui-settings/src/index.ts`](../packages/client/ui-settings/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-settings-connectors` ([`packages/client/ui-settings-connectors/src/index.ts`](../packages/client/ui-settings-connectors/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-settings-general`（[`packages/client/ui-settings-general/src/index.ts`](../packages/client/ui-settings-general/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-models`（[`packages/client/ui-settings-models/src/index.ts`](../packages/client/ui-settings-models/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-settings-plugin-inventory`（[`packages/client/ui-settings-plugin-inventory/src/index.ts`](../packages/client/ui-settings-plugin-inventory/src/index.ts)）
@@ -3355,6 +3415,7 @@ export interface Config {
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
+- `@deepseek-ai/dsh-plugin-registry`（[`packages/marketplace/plugin-registry/src/index.ts`](../packages/marketplace/plugin-registry/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
@@ -3418,6 +3479,9 @@ export interface Config {
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
+- `@deepseek-ai/dsh-plugin-install`（[`packages/marketplace/plugin-install/src/index.ts`](../packages/marketplace/plugin-install/src/index.ts)）
+- `@deepseek-ai/dsh-plugin-manifest`（[`packages/marketplace/plugin-manifest/src/index.ts`](../packages/marketplace/plugin-manifest/src/index.ts)）
+- `@deepseek-ai/dsh-random-uuid`（[`packages/util/random-uuid/src/index.ts`](../packages/util/random-uuid/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）

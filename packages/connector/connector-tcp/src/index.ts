@@ -17,8 +17,8 @@ import { ConnectorId } from '@deepseek-ai/dsh-connector'
 import type { ConnectorOs } from '@deepseek-ai/dsh-connector'
 import { openConnectorTcpLink } from './client.ts'
 
-export { openConnectorTcpLink } from './client.ts'
-export type { ConnectorTcpOptions } from './client.ts'
+export { openConnectorLinkOverSocket, openConnectorTcpLink } from './client.ts'
+export type { ConnectorSocketOptions, ConnectorTcpOptions } from './client.ts'
 
 /** Cordis plugin name. */
 export const name = 'connector-tcp'

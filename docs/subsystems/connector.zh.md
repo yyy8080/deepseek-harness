@@ -76,6 +76,36 @@ interface ConnectorRequest {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxconnectorportal--connectorportal"></a>
+
+### `ctx.connectorPortal` — `ConnectorPortal`
+
+The connector portal service (`ctx.connectorPortal`). It owns the enrollment ledger, the routes that serve packs and accept attachments, and the registrations attached targets hold in `ctx.connectors`.
+
+```ts cordis-catalog
+/**
+ * Mint one enrollment and describe the pack the browser should fetch.
+ * @param request - the target family the user picked.
+ * @returns the download path, file name, and download deadline.
+ */
+@Remote('issue') issue(request: ConnectorPackRequest): ConnectorPackTicket
+
+/**
+ * Read the current enrollment ledger.
+ * @returns every enrollment this deployment holds, oldest first.
+ */
+@Remote('list') list(): ConnectorPortalSnapshot
+
+/**
+ * Discard one enrollment, disconnecting its agent when one is attached.
+ * @param request - the enrollment to discard.
+ * @returns whether the enrollment was still known.
+ */
+@Remote('revoke') async revoke(request: ConnectorRevokeRequest): Promise<ConnectorRevokeResult>
+```
+
+Source: [`packages/host/connector-portal/src/index.ts`](../../packages/host/connector-portal/src/index.ts)
+
 <a id="ctxconnectors--connectorregistry"></a>
 
 ### `ctx.connectors` — `ConnectorRegistry`
@@ -180,4 +210,27 @@ A connector's shared link finished opening and is now serving operations. Emitte
 ```
 
 Source: [`packages/connector/connector/src/index.ts`](../../packages/connector/connector/src/index.ts)
+
+<a id="connector-portal-events"></a>
+
+### `connector-portal/*` events
+
+<a id="connector-portalattached--emit"></a>
+
+#### `connector-portal/attached` — emit
+
+One enrolled target finished its handshake and is now registered in `ctx.connectors`. Emitted once per attachment, including a re-attach after the agent lost and regained its connection.
+
+```ts cordis-catalog
+/**
+ * One enrolled target finished its handshake and is now registered in
+ * `ctx.connectors`. Emitted once per attachment, including a re-attach
+ * after the agent lost and regained its connection.
+ * @param enrollmentId - the enrollment whose agent attached.
+ * @mode emit
+ */
+'connector-portal/attached'(enrollmentId: ConnectorEnrollmentId): void
+```
+
+Source: [`packages/host/connector-portal/src/index.ts`](../../packages/host/connector-portal/src/index.ts)
 <!-- END GENERATED cordis-surface -->

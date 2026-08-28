@@ -24,6 +24,18 @@
       "path": "../../packages/boot/cmdline"
     },
     {
+      "path": "../../packages/marketplace/plugin-install"
+    },
+    {
+      "path": "../../packages/marketplace/plugin-manifest"
+    },
+    {
+      "path": "../../packages/marketplace/plugin-registry"
+    },
+    {
+      "path": "../../packages/marketplace/plugin-registry-static"
+    },
+    {
       "path": "../../packages/bundle/base"
     },
     {

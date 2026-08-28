@@ -1,0 +1,7 @@
+# The hello-marketplace bundle patch: one row over whatever the profile already
+# composed. A marketplace plugin is an ordinary bundle, so its layer applies
+# after every layer listed before it in dsh.profile.bundles.
+
+- insert:
+    - id: hello-marketplace
+      name: dsh-plugin-hello-marketplace

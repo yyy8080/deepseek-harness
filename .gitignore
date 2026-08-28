@@ -39,3 +39,6 @@ apps/web/dist/
 worktrees/
 .agents/worktrees/
 .typert-*/
+
+# Sample marketplace tarballs produced by `pnpm pack` in examples/marketplace.
+examples/marketplace/*.tgz

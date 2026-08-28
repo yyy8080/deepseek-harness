@@ -15,6 +15,7 @@ import { Buffer } from 'node:buffer'
 import { timingSafeEqual } from 'node:crypto'
 import { createServer } from 'node:net'
 import type { AddressInfo, Server, Socket } from 'node:net'
+import { StringDecoder } from 'node:string_decoder'
 import { ConnectorError } from '@deepseek-ai/dsh-connector'
 import type {
   ConnectorEditRequest,
@@ -301,6 +302,33 @@ class ConnectorSession {
 }
 
 /**
+ * Serve one already-connected client over the target's execution world. The
+ * caller owns the socket's origin — an accepted TCP connection in listen mode,
+ * an upgraded HTTP connection in attach mode — and this function owns
+ * everything above it: framing, the handshake, dispatch, and releasing the
+ * processes that connection started.
+ * @param socket - the connected socket, before any connector frame is read.
+ * @param link - the execution world this connection operates on.
+ * @param token - shared secret the client must present in its `hello`.
+ * @returns a disposer that drops the socket and releases its processes.
+ */
+export function serveConnectorSocket(socket: Socket, link: ConnectorLink, token: string): () => void {
+  // Decoding here rather than through `socket.setEncoding` so both socket
+  // origins are served identically: node refuses an encoding change on a
+  // socket upgraded out of an HTTP request (ERR_HTTP_SOCKET_ENCODING, RFC 7230
+  // §3). StringDecoder keeps the multi-byte-safe boundary handling.
+  const text = new StringDecoder('utf8')
+  const session = new ConnectorSession(socket, link, token)
+  socket.on('data', (chunk: Buffer) => { session.receive(text.write(chunk)) })
+  socket.on('error', () => { socket.destroy() })
+  socket.on('close', () => { session.release() })
+  return () => {
+    session.release()
+    socket.destroy()
+  }
+}
+
+/**
  * Start a connector agent on this machine.
  * @param options - bind address, shared secret, and served working directory.
  * @returns the listening server, after the port is bound.
@@ -308,20 +336,11 @@ class ConnectorSession {
 export async function serveConnector(options: ConnectorServeOptions): Promise<ConnectorServer> {
   if (options.token.length === 0) throw new Error('connector-host: a non-empty token is required')
   const link = await createConnectorHost({ workdir: options.workdir })
-  const sessions = new Set<ConnectorSession>()
   const sockets = new Set<Socket>()
   const server: Server = createServer((socket) => {
-    socket.setEncoding('utf8')
-    const session = new ConnectorSession(socket, link, options.token)
-    sessions.add(session)
+    serveConnectorSocket(socket, link, options.token)
     sockets.add(socket)
-    socket.on('data', (chunk: string) => { session.receive(chunk) })
-    socket.on('error', () => { socket.destroy() })
-    socket.on('close', () => {
-      session.release()
-      sessions.delete(session)
-      sockets.delete(socket)
-    })
+    socket.on('close', () => { sockets.delete(socket) })
   })
   try {
     await new Promise<void>((resolve, reject) => {

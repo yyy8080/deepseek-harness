@@ -34,6 +34,7 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/brand': 'The package is a type-only primitive erased at compile time.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
+  'packages/util/random-uuid': 'The package only mints random identifiers for wire correlation and browser-local drafts; no minted value reaches a model request.',
 }
 
 /**
@@ -99,6 +100,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-settings-general': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-settings-models': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-settings-plugin-inventory': { kind: 'none', reason: 'Browser-side inventory projection; registers nothing model-facing.' },
+  'packages/client/ui-settings-connectors': { kind: 'none', reason: 'Browser-side enrollment surface; registers nothing model-facing.' },
   'packages/client/locale': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/web': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/examples/agent-spine-demo': { kind: 'indirect', reason: 'The bundle only mounts model-facing child plugins.' },
@@ -115,6 +117,11 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/host/webserver': { kind: 'none', reason: 'The HTTP carrier bridges browser and API handler and registers nothing model-facing.' },
   'packages/host/frontend-static': { kind: 'none', reason: 'The SPA dist server answers browser asset requests and registers nothing model-facing.' },
   'packages/host/plugin-inventory': { kind: 'none', reason: 'Host-side read-only Loader projection; registers nothing model-facing.' },
+  'packages/host/connector-portal': { kind: 'indirect', reason: 'Enrollment and the attach endpoint only register a machine in ctx.connectors; dsh-connector and the connector-backed providers own every rendered effect.' },
+  'packages/marketplace/plugin-manifest': { kind: 'none', reason: 'The schema validates publisher metadata; a listed plugin\'s own package owns its model-facing behavior.' },
+  'packages/marketplace/plugin-install': { kind: 'none', reason: 'The installer writes a profile directory; a layer it installs owns its model-facing behavior from the next launch.' },
+  'packages/marketplace/plugin-registry': { kind: 'none', reason: 'The catalog seam answers marketplace queries and registers nothing model-facing.' },
+  'packages/marketplace/plugin-registry-static': { kind: 'none', reason: 'The catalog provider reads a JSON index and registers nothing model-facing.' },
   'packages/bundle/base': { kind: 'indirect', reason: 'The bundle is a patch-list carrier; each inserted row\'s package owns its model-facing behavior.' },
   'packages/bundle/headless': { kind: 'none', reason: 'The one-shot runner submits the task as an ordinary user message; prompts and tools belong to the composed base and headless bundles.' },
   'packages/llm/llm': { kind: 'none', reason: 'The adapter registry forwards already-assembled requests unchanged.' },

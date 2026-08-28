@@ -46,13 +46,14 @@ describe('verify-cordis-config metadata expressions', () => {
 })
 
 describe('workspace Bundle discovery and product dependency closures', () => {
-  it('discovers a Bundle outside packages/bundle from its manifest declaration', () => {
+  it('discovers a Bundle outside packages/bundle, including a packable example', () => {
     const fixture = mkdtempSync(join(tmpdir(), 'dsh-bundle-discovery-'))
     try {
       const bundleDir = join(fixture, 'packages/subagent/example')
       const plainDir = join(fixture, 'packages/bundle/plain')
-      mkdirSync(bundleDir, { recursive: true })
-      mkdirSync(plainDir, { recursive: true })
+      const sampleDir = join(fixture, 'examples/marketplace/sample-plugin')
+      const leafDir = join(fixture, 'examples/marketplace/leaf')
+      for (const directory of [bundleDir, plainDir, sampleDir, leafDir]) mkdirSync(directory, { recursive: true })
       writeFileSync(join(bundleDir, 'package.json'), JSON.stringify({
         name: '@deepseek-ai/dsh-subagent-example',
         dsh: { bundle: { patch: './cordis.patch.yml' } },
@@ -60,8 +61,14 @@ describe('workspace Bundle discovery and product dependency closures', () => {
       writeFileSync(join(plainDir, 'package.json'), JSON.stringify({
         name: '@deepseek-ai/dsh-plain',
       }))
+      writeFileSync(join(sampleDir, 'package.json'), JSON.stringify({
+        name: 'dsh-plugin-sample',
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }))
+      writeFileSync(join(leafDir, 'package.json'), JSON.stringify({ name: 'dsh-example-leaf' }))
 
       expect(bundleManifestPaths(fixture)).toEqual([
+        'examples/marketplace/sample-plugin/package.json',
         'packages/subagent/example/package.json',
       ])
     } finally {

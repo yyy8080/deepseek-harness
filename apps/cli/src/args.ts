@@ -16,6 +16,7 @@
  */
 
 import { Command, CommanderError } from 'commander'
+import { MARKETPLACE_INDEX_ENV, type MarketplaceInvocation, type MarketplaceVerb } from './marketplace.ts'
 
 /** Boot a named profile and hand it the invocation's inner arguments. */
 interface ProfileInvocation {
@@ -44,8 +45,17 @@ interface PluginInvocation {
   args: string[]
 }
 
+/** Browse a plugin catalog and install from it into a profile. */
+interface MarketplaceCommandInvocation extends MarketplaceInvocation {
+  mode: 'marketplace'
+}
+
 /** The resolved `dsh` invocation. Help, version, and errors exit inside {@link parseDshArgs}. */
-export type DshInvocation = ProfileInvocation | DumpConfigInvocation | PluginInvocation
+export type DshInvocation =
+  | ProfileInvocation
+  | DumpConfigInvocation
+  | PluginInvocation
+  | MarketplaceCommandInvocation
 
 /** Launcher flags shared by the default command and the `web` alias. */
 interface BootOptions {
@@ -60,6 +70,41 @@ interface BootOptions {
  */
 const collect = (value: string, previous: string[] = []): string[] => [...previous, value]
 
+/** The complete `dsh marketplace` verb set, in the order its help lists them. */
+const MARKETPLACE_VERBS: readonly MarketplaceVerb[] = ['search', 'show', 'install', 'uninstall', 'list', 'updates']
+
+/** Whether a positional names a marketplace verb. */
+function isMarketplaceVerb(value: string): value is MarketplaceVerb {
+  return (MARKETPLACE_VERBS as readonly string[]).includes(value)
+}
+
+/** Flags the `marketplace` command owns. */
+interface MarketplaceOptions {
+  profile: string
+  index?: string
+  limit?: number
+}
+
+/** Parse `--limit`, rejecting anything that is not a positive whole number. */
+function parseLimit(value: string): number {
+  const limit = Number(value)
+  if (!Number.isInteger(limit) || limit < 1) throw new CommanderError(1, 'dsh.limit', 'error: --limit needs a positive whole number')
+  return limit
+}
+
+const MARKETPLACE_HELP_EXAMPLES = `
+Examples:
+  dsh marketplace --profile tui search hello       list catalog plugins matching "hello"
+  dsh marketplace --profile tui show <package>     the listing's versions and declared capabilities
+  dsh marketplace --profile tui install <package>  install the newest release into the tui profile
+  dsh marketplace --profile tui list               what the tui profile has installed, with provenance
+  dsh marketplace --profile tui updates            installed versions the catalog has moved past
+
+Declared capabilities are a publisher's claim, not a sandbox: an installed plugin
+runs with full harness authority. Relaunch dsh after installing a plugin — the
+profile reads its bundle layers at boot.
+`
+
 /** The launcher's own help text; each app prints its own. */
 const HELP_EXAMPLES = `
 Examples:
@@ -69,6 +114,7 @@ Examples:
   dsh --profile tui --resume <session>       arguments after the launcher flags reach the app
   dsh --profile web --help                   the web app's own flags and help
   dsh plugin --profile tui add <package>     install a plugin into the tui profile
+  dsh marketplace --profile tui search fs    browse a plugin catalog (see: dsh marketplace --help)
 `
 
 /**
@@ -178,6 +224,31 @@ export function parseDshArgs(argv: readonly string[], version: string): DshInvoc
       if (options.profile === '') program.error('error: --profile needs a name')
       if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')
       resolved = { mode: 'plugin', profile: options.profile, args }
+    })
+
+  const marketplace = program.command('marketplace')
+    .description('browse a plugin catalog and install from it into a profile')
+  marketplace
+    .requiredOption('--profile <name>', 'the profile the operation reads or installs into')
+    .option('--index <source>', `the catalog index: a path or http(s) URL (default: $${MARKETPLACE_INDEX_ENV})`)
+    .option('--limit <count>', 'upper bound on search results', parseLimit)
+    .argument('<verb>', `one of: ${MARKETPLACE_VERBS.join(', ')}`)
+    .argument('[target]', 'search text, or <package>[@version] for show/install/uninstall')
+    .addHelpText('after', MARKETPLACE_HELP_EXAMPLES)
+    .action((verb: string, target: string | undefined, options: MarketplaceOptions) => {
+      rejectParentOptions('marketplace')
+      if (options.profile === '') program.error('error: --profile needs a name')
+      if (!isMarketplaceVerb(verb)) {
+        program.error(`error: unknown marketplace verb ${JSON.stringify(verb)} (expected one of: ${MARKETPLACE_VERBS.join(', ')})`)
+      }
+      resolved = {
+        mode: 'marketplace',
+        verb,
+        profile: options.profile,
+        ...options.index === undefined ? {} : { index: options.index },
+        ...target === undefined ? {} : { target },
+        ...options.limit === undefined ? {} : { limit: options.limit },
+      }
     })
 
   try {
