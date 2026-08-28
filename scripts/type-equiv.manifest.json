@@ -57,6 +57,16 @@
       "source": "packages/connector/connector/src/index.ts"
     },
     {
+      "doc": "docs/subsystems/connector.md",
+      "symbol": "ConnectorChatAvailability",
+      "source": "packages/host/connector-portal/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/connector.md",
+      "symbol": "ConnectorProbeReport",
+      "source": "packages/host/connector-portal/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "AssistantProvenance",
       "source": "packages/llm/llm/src/message.ts"

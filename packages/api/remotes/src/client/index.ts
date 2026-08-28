@@ -14,6 +14,8 @@ import type { TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 export type { TypertClientRemote as ClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 export type { PluginInventorySnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 export type {
+  ConnectorChatAvailability,
+  ConnectorChatRefusal,
   ConnectorEnrollmentId,
   ConnectorEnrollmentStatus,
   ConnectorEnrollmentView,
@@ -21,6 +23,9 @@ export type {
   ConnectorPackRequest,
   ConnectorPackTicket,
   ConnectorPortalSnapshot,
+  ConnectorProbeFailure,
+  ConnectorProbeReport,
+  ConnectorProbeRequest,
   ConnectorRevokeRequest,
   ConnectorRevokeResult,
 } from '@deepseek-ai/dsh-host-connector-portal/types'

@@ -93,6 +93,13 @@
   border-radius: 10px;
   padding: 12px 14px;
   background: var(--dsw-alias-bg-module-platform);
+  /* Elevated surface: the pack command below scrolls sideways inside this
+     card, so the thumb takes the l2 pair. Declared on the card because the
+     elevation belongs to the surface, and the custom properties inherit down
+     to the box that actually scrolls (see ui-theme styles/scrollbar.css for
+     the rebinding contract). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .ticket h3 {

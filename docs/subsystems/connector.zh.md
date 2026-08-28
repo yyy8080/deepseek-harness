@@ -51,6 +51,14 @@ type ConnectorOs = 'linux' | 'macos' | 'windows'
 interface ConnectorRequest {
   /** Calling session; its last `connector/bound` event outranks the deployment default. */
   session?: Session
+  /**
+   * One named connector, outranking both the session binding and the
+   * deployment default. It is for a caller that is ABOUT a connector rather
+   * than inside a conversation — a liveness probe naming the machine it
+   * checks — never for a capability provider, which must resolve the calling
+   * session's own execution world.
+   */
+  connectorId?: ConnectorId
 }
 ```
 
@@ -67,6 +75,75 @@ interface ConnectorRequest {
 `ConnectorError` 携带四种码。`CONNECTOR_UNKNOWN` 指向没有注册项应答的 connector id——会话绑定到了本部署未提供的目标，或缺少默认值。`CONNECTOR_UNAVAILABLE` 覆盖无法打开或在操作中途丢失的链路。`CONNECTOR_PROTOCOL` 报告违反 wire 契约的对端。`CONNECTOR_UNSUPPORTED` 报告目标世界根本无法执行的操作，`spawnTerminal` 正是以此拒绝：PTY 分配不属于该操作集，因此挂到 connector 上的持久 shell 能力会大声失败，而不是把 shell 运行在错误的机器上。
 
 文件系统失败不会被坍缩成传输失败。目标的 `FsError` 码会跨越 wire 并在本侧重建，因此未找到或权限拒绝仍可按本地读取会抛出的同一个码进行路由。
+
+## 测活
+
+一条登记记录的 `attached` 状态记录的是最后一次完成的握手。此后被挂起、杀死或网络隔离的目标依然带着它，因此入口的 `probe` 回答另一个问题——此刻链路还能不能跑通一次往返——办法是沿着它解析并 stat 目标自己的工作目录。
+
+```ts type-equiv
+/**
+ * The outcome of one active round trip over a connector's live link. It is
+ * never derived from the ledger's `attached` status: that records the last
+ * handshake, while this records an operation the target answered just now.
+ */
+type ConnectorProbeReport =
+  | {
+    readonly alive: true
+    readonly enrollmentId: ConnectorEnrollmentId
+    /** Epoch milliseconds the probe ran at. */
+    readonly probedAt: number
+    /** Wall-clock milliseconds the round trip took. */
+    readonly latencyMs: number
+    /** Canonical absolute workdir path the TARGET resolved, in its own dialect. */
+    readonly resolvedWorkdir: string
+    /** Whether that path is a directory on the target right now. */
+    readonly workdirIsDirectory: boolean
+  }
+  | {
+    readonly alive: false
+    readonly enrollmentId: ConnectorEnrollmentId
+    /** Epoch milliseconds the probe ran at. */
+    readonly probedAt: number
+    /** Machine-routable failure code. */
+    readonly failure: ConnectorProbeFailure
+    /** Operator-facing text naming the next action. */
+    readonly message: string
+  }
+```
+
+abort 一次连接器调用并不会让它完结：传输层只是通知目标取消，然后继续等它的回答，而这恰恰是卡住的目标永远不会发出的东西。因此入口自己执行 `probeTimeoutMs`，报告 `link-failed` 而不是一直挂着。
+
+## 在目标机器上开启对话
+
+只有当会话的 agent（智能体）由挂载了连接器版 provider 的 preset 组合而成时，`connector/bound` 事件才会真正抵达模型；没有这样的 preset，对话就会在绑定声称另一台机器的同时跑在 harness 机器上。入口会报告某个部署处于两者中的哪一种，让浏览器要么给出该操作、要么说明它为何缺席，而不是等到第一次工具调用才发现不一致。
+
+```ts type-equiv
+/**
+ * Whether this deployment can start a conversation bound to a connector, and
+ * with which composition. A binding only reaches the model when the session's
+ * agent is composed from a preset that mounts the connector-backed filesystem
+ * and subprocess providers; a deployment whose configured preset does neither
+ * would run the conversation on the harness machine while the UI claimed
+ * otherwise, so the portal reports the refusal instead of offering the action.
+ */
+type ConnectorChatAvailability =
+  | {
+    readonly ready: true
+    /** Agent preset a connector conversation is composed from. */
+    readonly agentPreset: string
+  }
+  | {
+    readonly ready: false
+    /** Machine-routable reason the action is unavailable. */
+    readonly reason: ConnectorChatRefusal
+    /** Operator-facing text naming what to configure. */
+    readonly message: string
+  }
+```
+
+绑定写在 `session.create` 这一步：它先核对注册项再创建任何东西，在发布之后追加那唯一一个 `connector/bound` 事件，并把请求里的 `cwd` 当作目标世界里的路径，而不是要在本机创建的目录。
+
+绑定会随创建结果、已接入的 `session.list` 行以及 `host/session-added` 一并回到客户端。报出绑定的对话不属于任何本地 Workspace——它的目录属于目标——因此浏览器在工作区 chip 的位置写出那台机器，而不是索要一次根本不适用的选择。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -91,10 +168,25 @@ The connector portal service (`ctx.connectorPortal`). It owns the enrollment led
 @Remote('issue') issue(request: ConnectorPackRequest): ConnectorPackTicket
 
 /**
- * Read the current enrollment ledger.
- * @returns every enrollment this deployment holds, oldest first.
+ * Read the current enrollment ledger and whether a machine in it can host a
+ * conversation.
+ * @returns every enrollment this deployment holds, oldest first, plus the
+ *   composition connector conversations would be started from.
  */
-@Remote('list') list(): ConnectorPortalSnapshot
+@Remote('list') async list(): Promise<ConnectorPortalSnapshot>
+
+/**
+ * Prove one attached machine's link is answering right now, by resolving and
+ * inspecting its own working directory across the live connection.
+ *
+ * The ledger's `attached` status records the last completed handshake, which
+ * a target that has since been suspended, killed, or partitioned still
+ * carries; only a completed round trip distinguishes the two.
+ * @param request - the enrollment whose machine to reach.
+ * @returns the round trip's latency and what the target reported, or the
+ *   failure and the action that answers it.
+ */
+@Remote('probe') async probe(request: ConnectorProbeRequest): Promise<ConnectorProbeReport>
 
 /**
  * Discard one enrollment, disconnecting its agent when one is attached.
@@ -138,9 +230,10 @@ list(): ConnectorDescriptor[]
 get(id: ConnectorId): ConnectorDescriptor | undefined
 
 /**
- * Resolve which connector one capability call runs on. The session's last
- * `connector/bound` event outranks the deployment default.
- * @param request - the calling session, when there is one.
+ * Resolve which connector one capability call runs on. An explicitly named
+ * connector outranks the session's last `connector/bound` event, which in
+ * turn outranks the deployment default.
+ * @param request - the named connector or the calling session, when there is one.
  * @returns the resolved connector id.
  */
 resolveId(request: ConnectorRequest = {}): ConnectorId
@@ -154,7 +247,7 @@ describe(request: ConnectorRequest = {}): ConnectorDescriptor
 
 /**
  * Resolve the connector for one call without raising when nothing answers.
- * @param request - the calling session, when there is one.
+ * @param request - the named connector or the calling session, when there is one.
  * @returns the resolved descriptor, or undefined when none can be resolved.
  */
 tryDescribe(request: ConnectorRequest = {}): ConnectorDescriptor | undefined

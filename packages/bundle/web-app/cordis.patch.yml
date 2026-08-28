@@ -153,8 +153,16 @@
     # Downloadable connector packs and the endpoint their agents dial back to.
     # Only a browser that already reached this deployment can mint a pack, and
     # the unguessable pack path is what authorizes its download.
+    #
+    # `chatPreset` names the composition a conversation started from the
+    # Connectors page runs; the portal refuses to offer that action unless the
+    # roster actually holds a preset composing the connector-backed providers,
+    # so a deployment that removed it says so instead of quietly running the
+    # conversation on this machine.
     - id: connector-portal
       name: '@deepseek-ai/dsh-host-connector-portal'
+      config:
+        chatPreset: connector
 
     # The client-plugin reload chain, always mounted: it is idle until a
     # rebuild watcher (pnpm run dev:web) actually rewrites client bundles. It

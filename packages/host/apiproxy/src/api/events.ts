@@ -133,6 +133,8 @@ export type HostFrame =
     origin?: 'subagent'
     cwd?: string
     agentPreset?: string
+    /** Connector the new session's files and commands run on; absent = this machine. */
+    connectorId?: string
   }
   | { type: 'host/session-removed'; sessionId: SessionId }
   | { type: 'host/session-status'; sessionId: SessionId; running: boolean }

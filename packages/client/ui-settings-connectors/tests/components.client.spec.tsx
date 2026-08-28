@@ -8,7 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { ConnectorsSection, installCommand } from '../src/client/ConnectorsSection.tsx'
-import type { ConnectorsSectionInjected } from '../src/client/ConnectorsSection.tsx'
+import type { ConnectorsSectionInjected, ConnectorsSectionProps } from '../src/client/ConnectorsSection.tsx'
 import { en } from '../src/client/locales.ts'
 import type { ConnectorsLocaleKey } from '../src/client/locales.ts'
 
@@ -25,7 +25,11 @@ const TICKET = {
   expiresAt: Date.parse('2026-08-26T12:00:00Z'),
 } as unknown as Awaited<ReturnType<ConnectorsSectionInjected['issue']>>
 
-type Enrollment = Awaited<ReturnType<ConnectorsSectionInjected['list']>>['enrollments'][number]
+type Snapshot = Awaited<ReturnType<ConnectorsSectionInjected['list']>>
+type Enrollment = Snapshot['enrollments'][number]
+
+/** The chat availability a deployment composed for connector work reports. */
+const CHAT_READY = { ready: true, agentPreset: 'connector' } as const satisfies Snapshot['chat']
 
 /** Spell one branded enrollment id, which only the host ever mints for real. */
 function id(value: string): Enrollment['enrollmentId'] {
@@ -46,20 +50,31 @@ function machine(overrides: Partial<Enrollment> = {}): Enrollment {
   } as Enrollment
 }
 
+/** One ledger read, defaulting to a deployment that can host connector chats. */
+function snapshot(enrollments: Enrollment[] = [], chat: Snapshot['chat'] = CHAT_READY): Snapshot {
+  return { enrollments, chat }
+}
+
 /** Render the page over stub dependencies and return the ones tests drive. */
 function mount(overrides: Partial<ConnectorsSectionInjected> = {}) {
   const face: ConnectorsSectionInjected = {
     issue: vi.fn<ConnectorsSectionInjected['issue']>().mockResolvedValue(TICKET),
-    list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue({ enrollments: [] }),
+    list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot()),
     revoke: vi.fn<ConnectorsSectionInjected['revoke']>().mockResolvedValue(undefined),
+    probe: vi.fn<ConnectorsSectionInjected['probe']>()
+      .mockResolvedValue({ alive: true, enrollmentId: id('enrol-1'), probedAt: 0, latencyMs: 12, resolvedWorkdir: '/srv/work', workdirIsDirectory: true }),
     origin: ORIGIN,
     copy: vi.fn<ConnectorsSectionInjected['copy']>().mockResolvedValue(undefined),
     t: (key: ConnectorsLocaleKey, params?: Record<string, unknown>) =>
       en[key].replace(/\{(\w+)\}/g, (_match, name: string) => String(params?.[name])),
     ...overrides,
   }
-  const view = render(<ConnectorsSection {...face} />)
-  return Object.assign(face, { view })
+  // `close` is the shell-owned section affordance (SettingsSectionOwnerProps);
+  // the rest of that runtime share is the outlet's, and no test drives it.
+  const close = vi.fn<() => void>()
+  const props = { ...face, close } as unknown as ConnectorsSectionProps
+  const view = render(<ConnectorsSection {...props} />)
+  return Object.assign(face, { view, close })
 }
 
 /** A promise the test settles by hand. */
@@ -144,7 +159,7 @@ describe('the Connectors page', () => {
   it('names an attached machine, its connector id, and its working directory', async () => {
     mount({
       list: vi.fn<ConnectorsSectionInjected['list']>()
-        .mockResolvedValue({ enrollments: [machine(), machine({ enrollmentId: id('enrol-2'), status: 'issued', label: null })] }),
+        .mockResolvedValue(snapshot([machine(), machine({ enrollmentId: id('enrol-2'), status: 'issued', label: null })])),
     })
 
     await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
@@ -161,8 +176,8 @@ describe('the Connectors page', () => {
   it('re-reads the ledger on demand and after a machine is removed', async () => {
     const face = mount({
       list: vi.fn<ConnectorsSectionInjected['list']>()
-        .mockResolvedValueOnce({ enrollments: [machine()] })
-        .mockResolvedValue({ enrollments: [] }),
+        .mockResolvedValueOnce(snapshot([machine()]))
+        .mockResolvedValue(snapshot()),
     })
     await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
 
@@ -176,7 +191,7 @@ describe('the Connectors page', () => {
 
   it('re-reads the ledger after a removal the portal refused', async () => {
     const face = mount({
-      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue({ enrollments: [machine()] }),
+      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
       revoke: vi.fn<ConnectorsSectionInjected['revoke']>().mockRejectedValue(new Error('gone')),
     })
     await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
@@ -257,5 +272,158 @@ describe('the Connectors page', () => {
     await vi.advanceTimersByTimeAsync(8000)
     expect(face.list).toHaveBeenCalledTimes(2)
     vi.useRealTimers()
+  })
+})
+
+describe('the liveness check', () => {
+  it('reports the round trip a live machine completed', async () => {
+    const face = mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])) })
+    await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
+
+    fireEvent.click(screen.getByText(en.probe))
+
+    await waitFor(() => {
+      expect(document.querySelector('[data-connector-probe-result]')?.getAttribute('data-connector-probe-result'))
+        .toBe('alive')
+    })
+    expect(face.probe).toHaveBeenCalledWith('enrol-1')
+    expect(document.querySelector('[data-connector-probe-result]')?.textContent)
+      .toBe('Link is alive: 12 ms round trip, and the target resolved its working directory /srv/work.')
+  })
+
+  it('says the working directory is gone when the target no longer has one', async () => {
+    mount({
+      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
+      probe: vi.fn<ConnectorsSectionInjected['probe']>().mockResolvedValue({
+        alive: true, enrollmentId: id('enrol-1'), probedAt: 0, latencyMs: 7, resolvedWorkdir: '/srv/work', workdirIsDirectory: false,
+      }),
+    })
+    await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
+
+    fireEvent.click(screen.getByText(en.probe))
+
+    await waitFor(() => { expect(screen.queryByText(/is not a directory on the target/)).not.toBeNull() })
+  })
+
+  it('shows the deployment\u2019s own message when the link does not answer', async () => {
+    mount({
+      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
+      probe: vi.fn<ConnectorsSectionInjected['probe']>().mockResolvedValue({
+        alive: false, enrollmentId: id('enrol-1'), probedAt: 0, failure: 'not-attached', message: 're-run the connector pack on the target',
+      }),
+    })
+    await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
+
+    fireEvent.click(screen.getByText(en.probe))
+
+    await waitFor(() => { expect(screen.queryByText('re-run the connector pack on the target')).not.toBeNull() })
+    expect(document.querySelector('[data-connector-probe-result="dead"]')).not.toBeNull()
+  })
+
+  it('reports a check that never reached the deployment at all', async () => {
+    mount({
+      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
+      probe: vi.fn<ConnectorsSectionInjected['probe']>().mockRejectedValue(new Error('offline')),
+    })
+    await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
+
+    fireEvent.click(screen.getByText(en.probe))
+
+    await waitFor(() => { expect(screen.queryByText(en.probeFailed)).not.toBeNull() })
+  })
+
+  it('is offered only for a machine that has dialled in', async () => {
+    mount({
+      list: vi.fn<ConnectorsSectionInjected['list']>()
+        .mockResolvedValue(snapshot([machine({ status: 'downloaded', label: null })])),
+    })
+
+    await waitFor(() => { expect(screen.queryByText(en.statusDownloaded)).not.toBeNull() })
+    expect(document.querySelector('[data-connector-probe]')).toBeNull()
+  })
+
+  it.each([
+    ['fulfils', (task: ReturnType<typeof deferred<never>>) => { task.settle(undefined as never) }],
+    ['rejects', (task: ReturnType<typeof deferred<never>>) => { task.fail(new Error('late')) }],
+  ])('ignores a check that %s after the page is closed', async (_case, finish) => {
+    const task = deferred<never>()
+    const page = mount({
+      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
+      probe: vi.fn<ConnectorsSectionInjected['probe']>().mockReturnValue(task.promise),
+    })
+    await waitFor(() => { expect(screen.queryByText(en.probe)).not.toBeNull() })
+    fireEvent.click(screen.getByText(en.probe))
+
+    page.view.unmount()
+
+    expect(() => { finish(task) }).not.toThrow()
+  })
+})
+
+describe('starting a chat on a machine', () => {
+  it('starts one on the composition the deployment reported, and leaves Settings', async () => {
+    const startChat = vi.fn<NonNullable<ConnectorsSectionInjected['startChat']>>().mockResolvedValue(undefined)
+    const page = mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])), startChat })
+    await waitFor(() => { expect(screen.queryByText(en.startChat)).not.toBeNull() })
+
+    fireEvent.click(screen.getByText(en.startChat))
+
+    await waitFor(() => { expect(startChat).toHaveBeenCalledTimes(1) })
+    expect(startChat).toHaveBeenCalledWith(expect.objectContaining({ connectorId: 'enrol-1' }), 'connector')
+    // The conversation opens behind this panel, so a Settings that stays up
+    // leaves the user looking at the page they just left.
+    await waitFor(() => { expect(page.close).toHaveBeenCalledTimes(1) })
+    expect(screen.queryByText(en.chatStarting)).toBeNull()
+  })
+
+  it('reports a session the host refused to create, and stays', async () => {
+    const startChat = vi.fn<NonNullable<ConnectorsSectionInjected['startChat']>>()
+      .mockRejectedValue(new Error('connector-not-registered'))
+    const page = mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])), startChat })
+    await waitFor(() => { expect(screen.queryByText(en.startChat)).not.toBeNull() })
+
+    fireEvent.click(screen.getByText(en.startChat))
+
+    await waitFor(() => { expect(screen.queryByText(/connector-not-registered/)).not.toBeNull() })
+    expect(page.close).not.toHaveBeenCalled()
+  })
+
+  it('withholds the action and explains itself when the deployment cannot bind a session', async () => {
+    mount({
+      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(
+        snapshot([machine()], { ready: false, reason: 'preset-missing', message: 'agent preset "connector" is not in this deployment\u2019s roster' }),
+      ),
+      startChat: vi.fn<NonNullable<ConnectorsSectionInjected['startChat']>>().mockResolvedValue(undefined),
+    })
+
+    await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
+    expect(document.querySelector('[data-connector-start-chat]')).toBeNull()
+    expect(document.querySelector('[data-connector-chat-unavailable]')?.getAttribute('data-connector-chat-unavailable'))
+      .toBe('preset-missing')
+  })
+
+  it('hides the action entirely where no conversation flow is mounted', async () => {
+    mount({ list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])) })
+
+    await waitFor(() => { expect(screen.queryByText('build-box')).not.toBeNull() })
+    expect(document.querySelector('[data-connector-start-chat]')).toBeNull()
+    expect(document.querySelector('[data-connector-chat-unavailable]')).toBeNull()
+  })
+
+  it.each([
+    ['fulfils', (task: ReturnType<typeof deferred<undefined>>) => { task.settle(undefined) }],
+    ['rejects', (task: ReturnType<typeof deferred<undefined>>) => { task.fail(new Error('late')) }],
+  ])('ignores a session that %s after the page is closed', async (_case, finish) => {
+    const task = deferred<undefined>()
+    const page = mount({
+      list: vi.fn<ConnectorsSectionInjected['list']>().mockResolvedValue(snapshot([machine()])),
+      startChat: vi.fn<NonNullable<ConnectorsSectionInjected['startChat']>>().mockReturnValue(task.promise),
+    })
+    await waitFor(() => { expect(screen.queryByText(en.startChat)).not.toBeNull() })
+    fireEvent.click(screen.getByText(en.startChat))
+
+    page.view.unmount()
+
+    expect(() => { finish(task) }).not.toThrow()
   })
 })

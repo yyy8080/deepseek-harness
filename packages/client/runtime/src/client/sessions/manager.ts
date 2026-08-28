@@ -530,14 +530,26 @@ export class SessionManager {
    * Contract session.create; on success merge into summaries immediately (no
    * wait for the next refresh). A created session is blank by definition
    * (entity birth precedes the first message).
-   * @param opts - target workspace or working directory, plus an optional caller-owned id.
+   * @param opts - target workspace or working directory, an optional
+   *   caller-owned id, the composition the agent is built from, and the
+   *   connector its execution world binds to.
    * @returns the create result.
    */
   async create(
-    opts: { workspaceId?: WorkspaceId; cwd?: string; sessionId?: SessionId } = {},
-  ): Promise<RpcResult<{ sessionId: SessionId }>> {
+    opts: {
+      workspaceId?: WorkspaceId
+      cwd?: string
+      sessionId?: SessionId
+      agentPreset?: string
+      connectorId?: string
+    } = {},
+  ): Promise<RpcResult<{ sessionId: SessionId; agentPreset?: string; connectorId?: string }>> {
     try {
-      const shared = opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }
+      const shared = {
+        ...opts.sessionId === undefined ? {} : { sessionId: opts.sessionId },
+        ...opts.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset },
+        ...opts.connectorId === undefined ? {} : { connectorId: opts.connectorId },
+      }
       const payload = opts.workspaceId !== undefined
         ? { workspaceId: opts.workspaceId, ...shared }
         : { ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...shared }
@@ -547,6 +559,7 @@ export class SessionManager {
           sessionId: result.value.sessionId, updatedAt: Date.now(), running: false, blank: true,
           ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
           ...(result.value.agentPreset !== undefined ? { agentPreset: result.value.agentPreset } : {}),
+          ...(result.value.connectorId !== undefined ? { connectorId: result.value.connectorId } : {}),
         } })
       } else {
         const publishedSessionId = workspaceAttachSessionId(result.error)
@@ -802,6 +815,7 @@ export class SessionManager {
           ...(frame.origin !== undefined ? { origin: frame.origin } : {}),
           ...(frame.cwd !== undefined ? { cwd: frame.cwd } : {}),
           ...(frame.agentPreset !== undefined ? { agentPreset: frame.agentPreset } : {}),
+          ...(frame.connectorId !== undefined ? { connectorId: frame.connectorId } : {}),
         })
         this.sessions.get(frame.sessionId)?.handleBlank(frame.blank)
         if (frame.origin === 'subagent' && frame.parentSessionId !== undefined) {
@@ -1097,10 +1111,16 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
         // create echo, the select echo, a list row) reports the CURRENT one.
         ...(mutation.summary.agentPreset !== undefined
           ? { agentPreset: mutation.summary.agentPreset } : {}),
+        // Fill-only, unlike the preset: a cold list row is projected from the
+        // header index alone and reports no binding, so newest-wins would drop
+        // the create echo's connector on the very next refresh.
+        ...(existing.connectorId === undefined && mutation.summary.connectorId !== undefined
+          ? { connectorId: mutation.summary.connectorId } : {}),
       }
       if (filled.cwd === existing.cwd && filled.parentSessionId === existing.parentSessionId
         && filled.origin === existing.origin && filled.blank === existing.blank
-        && filled.agentPreset === existing.agentPreset) return [...summaries]
+        && filled.agentPreset === existing.agentPreset
+        && filled.connectorId === existing.connectorId) return [...summaries]
       return summaries.map(summary => summary.sessionId === mutation.summary.sessionId ? filled : summary)
     }
     case 'remove':

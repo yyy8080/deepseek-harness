@@ -18,6 +18,9 @@
       "path": "../../connector/connector"
     },
     {
+      "path": "../../preset/agent-presets"
+    },
+    {
       "path": "../../connector/connector-host"
     },
     {

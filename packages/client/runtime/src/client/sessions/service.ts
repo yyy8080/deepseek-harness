@@ -52,6 +52,12 @@ export interface SessionSummary {
    * session actually runs rather than the deployment's current default.
    */
   agentPreset?: string
+  /**
+   * Connector this session's files and commands run on; absent when they run
+   * on the machine hosting the gateway. `cwd` is then a directory in that
+   * target's filesystem, which no local Workspace owns.
+   */
+  connectorId?: string
   parentId?: SessionId
   /** Coarse durable origin for navigation filtering; not a continuation capability. */
   origin?: 'subagent'
@@ -490,6 +496,29 @@ export class SessionRuntime implements ISessions {
   }
 
   /**
+   * Start a conversation whose files and commands run on one connector, and
+   * select it.
+   *
+   * It bypasses the Workspace flow deliberately: a Workspace is a directory on
+   * the machine hosting this deployment, while `cwd` here is a directory in the
+   * TARGET's own world, so attaching one would file the session under a
+   * directory nothing on this machine owns. The session lands ungrouped, with
+   * the target's working directory as its cwd.
+   * @param opts - the connector to bind, the composition to build the agent
+   *   from, and the target-world directory the conversation starts in.
+   * @returns the new session id, already selected and locally addressable.
+   * @throws {SessionCreateError} when the host refuses the create or the binding.
+   */
+  async startConnectorSession(opts: { connectorId: string; agentPreset: string; cwd: string }): Promise<SessionId> {
+    const result = await this.manager.create(opts)
+    if (!result.ok) throw new SessionCreateError(result.error, undefined)
+    this.projectList()
+    const sessionId = result.value.sessionId
+    this.open(sessionId)
+    return sessionId
+  }
+
+  /**
    * Fork a session from a completed-turn prefix of the source (same
    * synchronous-addressability guarantee as {@link SessionRuntime.create}:
    * on resolution the child is in the list store and open() can target it).
@@ -683,6 +712,7 @@ export class SessionRuntime implements ISessions {
         ...(entry.parentSessionId !== undefined ? { parentId: entry.parentSessionId } : {}),
         ...(entry.origin !== undefined ? { origin: entry.origin } : {}),
         ...(entry.agentPreset !== undefined ? { agentPreset: entry.agentPreset } : {}),
+        ...(entry.connectorId !== undefined ? { connectorId: entry.connectorId } : {}),
       }
     }
     if (current !== undefined && currentAddress !== undefined) {

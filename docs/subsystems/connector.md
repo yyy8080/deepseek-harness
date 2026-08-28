@@ -51,6 +51,14 @@ Binding is one session event. `bindSessionConnector(session, id)` appends `conne
 interface ConnectorRequest {
   /** Calling session; its last `connector/bound` event outranks the deployment default. */
   session?: Session
+  /**
+   * One named connector, outranking both the session binding and the
+   * deployment default. It is for a caller that is ABOUT a connector rather
+   * than inside a conversation — a liveness probe naming the machine it
+   * checks — never for a capability provider, which must resolve the calling
+   * session's own execution world.
+   */
+  connectorId?: ConnectorId
 }
 ```
 
@@ -67,6 +75,75 @@ Process identifiers are assigned by the **client** in the spawn call rather than
 `ConnectorError` carries four codes. `CONNECTOR_UNKNOWN` names a connector id no registration answers — a session bound to a target this deployment does not offer, or a missing default. `CONNECTOR_UNAVAILABLE` covers a link that cannot be opened or was lost mid-operation. `CONNECTOR_PROTOCOL` reports a peer that violated the wire contract. `CONNECTOR_UNSUPPORTED` reports an operation the target world cannot perform at all, which is how `spawnTerminal` refuses: PTY allocation is not part of the operation set, so a persistent-shell capability mounted against a connector fails loudly instead of running the shell on the wrong machine.
 
 Filesystem failures are not collapsed into transport failures. The target's `FsError` code crosses the wire and is rebuilt on this side, so a not-found or permission denial stays routable by the same code a local read would raise.
+
+## Liveness
+
+An enrollment's `attached` status records the last completed handshake. A target suspended, killed, or partitioned since then still carries it, so the portal's `probe` answers the other question — does the link complete a round trip right now — by resolving and stating the target's own working directory over it.
+
+```ts type-equiv
+/**
+ * The outcome of one active round trip over a connector's live link. It is
+ * never derived from the ledger's `attached` status: that records the last
+ * handshake, while this records an operation the target answered just now.
+ */
+type ConnectorProbeReport =
+  | {
+    readonly alive: true
+    readonly enrollmentId: ConnectorEnrollmentId
+    /** Epoch milliseconds the probe ran at. */
+    readonly probedAt: number
+    /** Wall-clock milliseconds the round trip took. */
+    readonly latencyMs: number
+    /** Canonical absolute workdir path the TARGET resolved, in its own dialect. */
+    readonly resolvedWorkdir: string
+    /** Whether that path is a directory on the target right now. */
+    readonly workdirIsDirectory: boolean
+  }
+  | {
+    readonly alive: false
+    readonly enrollmentId: ConnectorEnrollmentId
+    /** Epoch milliseconds the probe ran at. */
+    readonly probedAt: number
+    /** Machine-routable failure code. */
+    readonly failure: ConnectorProbeFailure
+    /** Operator-facing text naming the next action. */
+    readonly message: string
+  }
+```
+
+Aborting a connector call does not complete it: the transport tells the target to cancel and keeps waiting for its answer, which is precisely what a wedged target never sends. The portal therefore enforces its own `probeTimeoutMs` and reports `link-failed` rather than hanging.
+
+## Starting a conversation on a target
+
+A `connector/bound` event only reaches the model when the session's agent is composed from a preset that mounts the connector-backed providers; without one the conversation runs on the harness machine while its binding says otherwise. The portal reports which of the two a deployment is in, so a browser can offer the action or explain its absence rather than discover the mismatch at the first tool call.
+
+```ts type-equiv
+/**
+ * Whether this deployment can start a conversation bound to a connector, and
+ * with which composition. A binding only reaches the model when the session's
+ * agent is composed from a preset that mounts the connector-backed filesystem
+ * and subprocess providers; a deployment whose configured preset does neither
+ * would run the conversation on the harness machine while the UI claimed
+ * otherwise, so the portal reports the refusal instead of offering the action.
+ */
+type ConnectorChatAvailability =
+  | {
+    readonly ready: true
+    /** Agent preset a connector conversation is composed from. */
+    readonly agentPreset: string
+  }
+  | {
+    readonly ready: false
+    /** Machine-routable reason the action is unavailable. */
+    readonly reason: ConnectorChatRefusal
+    /** Operator-facing text naming what to configure. */
+    readonly message: string
+  }
+```
+
+`session.create` is where the binding is written: it verifies the registration before creating anything, appends the one `connector/bound` event after publication, and treats the request's `cwd` as a path in the target's world rather than one to create here.
+
+The binding travels back out to clients on the create result, on attached `session.list` rows, and on `host/session-added`. A conversation that reports one belongs to no local Workspace — its directory is the target's — so the browser names the machine in place of the workspace chip instead of asking for a pick that could not apply.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -91,10 +168,25 @@ The connector portal service (`ctx.connectorPortal`). It owns the enrollment led
 @Remote('issue') issue(request: ConnectorPackRequest): ConnectorPackTicket
 
 /**
- * Read the current enrollment ledger.
- * @returns every enrollment this deployment holds, oldest first.
+ * Read the current enrollment ledger and whether a machine in it can host a
+ * conversation.
+ * @returns every enrollment this deployment holds, oldest first, plus the
+ *   composition connector conversations would be started from.
  */
-@Remote('list') list(): ConnectorPortalSnapshot
+@Remote('list') async list(): Promise<ConnectorPortalSnapshot>
+
+/**
+ * Prove one attached machine's link is answering right now, by resolving and
+ * inspecting its own working directory across the live connection.
+ *
+ * The ledger's `attached` status records the last completed handshake, which
+ * a target that has since been suspended, killed, or partitioned still
+ * carries; only a completed round trip distinguishes the two.
+ * @param request - the enrollment whose machine to reach.
+ * @returns the round trip's latency and what the target reported, or the
+ *   failure and the action that answers it.
+ */
+@Remote('probe') async probe(request: ConnectorProbeRequest): Promise<ConnectorProbeReport>
 
 /**
  * Discard one enrollment, disconnecting its agent when one is attached.
@@ -138,9 +230,10 @@ list(): ConnectorDescriptor[]
 get(id: ConnectorId): ConnectorDescriptor | undefined
 
 /**
- * Resolve which connector one capability call runs on. The session's last
- * `connector/bound` event outranks the deployment default.
- * @param request - the calling session, when there is one.
+ * Resolve which connector one capability call runs on. An explicitly named
+ * connector outranks the session's last `connector/bound` event, which in
+ * turn outranks the deployment default.
+ * @param request - the named connector or the calling session, when there is one.
  * @returns the resolved connector id.
  */
 resolveId(request: ConnectorRequest = {}): ConnectorId
@@ -154,7 +247,7 @@ describe(request: ConnectorRequest = {}): ConnectorDescriptor
 
 /**
  * Resolve the connector for one call without raising when nothing answers.
- * @param request - the calling session, when there is one.
+ * @param request - the named connector or the calling session, when there is one.
  * @returns the resolved descriptor, or undefined when none can be resolved.
  */
 tryDescribe(request: ConnectorRequest = {}): ConnectorDescriptor | undefined

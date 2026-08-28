@@ -77,6 +77,11 @@ async function bootWeb(
     // and the URL prompt line — surface glue, not anything that decides an
     // agent's capabilities, which is all this file asserts.
     { id: 'web-runtime', disabled: true },
+    // The connector portal serves its pack routes and its attach upgrade on
+    // the bound port disabled above, so it waits for `webServer` forever.
+    // Nothing it owns decides an agent's capabilities; the `connector` preset
+    // composes from the roster, not from the portal.
+    { id: 'connector-portal', disabled: true },
     { id: 'session-telemetry-otel', disabled: true },
     // A deployment-level skill on the host registry's GLOBAL layer — the same
     // registration shape a repository plugin's skill root uses. The layered
@@ -219,7 +224,7 @@ describe('the shipped Web composition', () => {
   it('supplies both shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'connector', 'cordis', 'minimal', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -345,6 +350,55 @@ describe('the shipped Web composition', () => {
     } finally {
       await native.dispose()
       await coded.dispose()
+    }
+  })
+
+  it('moves only the execution world off this machine for `connector`', async () => {
+    // Unique per run for the reason the layered-skills case is: these sessions
+    // persist into the ambient DSH home, and a fixed id collides with the log
+    // an earlier run left there.
+    const remote = await ctx.agents.create({
+      sessionId: SessionId(`preset-connector-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'connector').then(() => undefined),
+    })
+    const local = await ctx.agents.create({
+      sessionId: SessionId(`preset-connector-local-${randomUUID()}`),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    try {
+      // The claim the Connectors page's "start a chat" action rests on, read
+      // through the tool the model actually calls rather than through the
+      // service table: this session has no `connector/bound` event, so its
+      // filesystem seam refuses for want of a target. A composition that
+      // dropped the connector row would mount just as cleanly and read the
+      // harness host's own `/etc/hostname` instead — the quiet failure.
+      const read = async (agent: Agent): Promise<string> => JSON.stringify((await ctx.tools.execute({
+        callId: CallId('preset-connector-read'),
+        name: 'read',
+        arguments: { file_path: '/etc/hostname' },
+        signal: new AbortController().signal,
+        agent,
+      })).content)
+      expect(await read(remote.agent)).toContain('no connector is bound to this session')
+
+      // And only for this session: the realm is what keeps the swap per
+      // conversation, so the host plane and a session beside it are untouched.
+      expect(ctx.fs.constructor.name).not.toBe('ConnectorFileSystem')
+      expect(await read(local.agent)).not.toContain('no connector is bound to this session')
+
+      // Everything above those seams is the standard coding agent, minus the
+      // rows that would silently run on the host: delegation composes children
+      // from this machine's roster, and `skill-filesystem` discovers roots
+      // here rather than where the session's files are.
+      const tools = toolNames(ctx, remote.agent).filter(name => name !== 'glob' && name !== 'grep')
+      expect(tools).toEqual([
+        'ask_user_question', 'bash', 'create_goal', 'edit', 'exit_plan_mode',
+        'get_goal', 'job_kill', 'job_list', 'job_output', 'read', 'read_image',
+        'skill', 'todo_write', 'update_goal', 'web_search', 'write',
+      ])
+    } finally {
+      await local.dispose()
+      await remote.dispose()
     }
   })
 

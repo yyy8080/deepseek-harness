@@ -17,6 +17,11 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
+// Value import: `bindSessionConnector` is THE write path for a session's
+// execution-world binding, and `session.create` is where a connector-bound
+// conversation is born. The registry itself stays optional (`ctx.get`), so a
+// deployment composing no connectors still serves every other create.
+import { bindSessionConnector, ConnectorId, effectiveConnectorId } from '@deepseek-ai/dsh-connector'
 import { isAppendSurfaceEvent, isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue, Session, SessionEvent, SessionEventMap, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -478,16 +483,21 @@ function sessionListFields(header: SessionHeader, events: readonly SessionEvent[
   origin?: 'subagent'
   cwd?: string
   agentPreset?: string
+  connectorId?: string
 } {
   // The preset comes from the log, not the header: a session that switched
   // while blank ran its turns under the newer composition, and a picker
   // showing the creation-time value would contradict what the model saw.
   const agentPreset = resolveSessionPreset({ header, events })
+  // The binding has no header field at all — the log is its only authority —
+  // so a caller that passes no events gets no binding rather than a wrong one.
+  const connectorId = effectiveConnectorId(events)
   return {
     ...header.parentSession === undefined ? {} : { parentSessionId: header.parentSession },
     ...header.origin === undefined ? {} : { origin: header.origin },
     ...header.cwd === undefined ? {} : { cwd: header.cwd },
     ...agentPreset === undefined ? {} : { agentPreset },
+    ...connectorId === undefined ? {} : { connectorId: String(connectorId) },
   }
 }
 
@@ -1555,13 +1565,32 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     }
   }
 
-  /** Resolve one requested identity to a live agent, creating or resuming it once. */
+  /**
+   * Resolve one requested identity to a live agent, creating or resuming it once.
+   * @param sessionId - the identity being created or adopted.
+   * @param cwd - the conversation's working directory.
+   * @param options - identity, composition, and where `cwd` lives.
+   * @returns the live agent for that identity.
+   */
   async function ensureSession(
     sessionId: SessionId,
     cwd: string,
-    checkPersistedIdentity: boolean,
-    presetId?: string,
+    options: {
+      /** Whether a persisted session under this id may be resumed. */
+      checkPersistedIdentity: boolean
+      /** Composition to build a newly created agent from. */
+      presetId?: string
+      /**
+       * Whether `cwd` names a directory on the machine hosting this gateway.
+       * A connector-bound conversation's working directory belongs to the
+       * TARGET's filesystem, where this process cannot create it — and
+       * creating the same absolute path here would leave a stray directory
+       * that silently shadows nothing the conversation ever reads.
+       */
+      cwdIsLocal: boolean
+    },
   ): Promise<Agent> {
+    const { checkPersistedIdentity, presetId } = options
     let creation = sessionCreations.get(sessionId)
     if (creation === undefined) {
       creation = (async () => {
@@ -1602,10 +1631,12 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           })).agent
         }
 
-        try {
-          await mkdir(cwd, { recursive: true })
-        } catch (error: unknown) {
-          throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
+        if (options.cwdIsLocal) {
+          try {
+            await mkdir(cwd, { recursive: true })
+          } catch (error: unknown) {
+            throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
+          }
         }
         const composition = await composeAgent(presetId)
         return (await ctx.agents.create({
@@ -2091,8 +2122,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         const cwd = workspace?.path ?? request.payload.cwd ?? defaults.cwd
         const requestedPreset = request.payload.agentPreset
+        // Checked before the session exists: a create that published a session
+        // and then failed to bind would leave a conversation pointing at this
+        // machine under a UI that promised another one.
+        const requestedConnector = request.payload.connectorId
+        if (requestedConnector !== undefined) {
+          const connectors = ctx.get('connectors')
+          if (connectors?.get(ConnectorId(requestedConnector)) === undefined) {
+            return err(request, {
+              code: 'connector-not-registered',
+              message: `connector "${requestedConnector}" is not registered on this deployment`,
+              details: {
+                connectorId: requestedConnector,
+                available: (connectors?.list() ?? []).map(descriptor => String(descriptor.id)),
+              },
+            })
+          }
+        }
+        let agent: Agent
         try {
-          await ensureSession(sessionId, cwd, request.payload.sessionId !== undefined, requestedPreset)
+          agent = await ensureSession(sessionId, cwd, {
+            checkPersistedIdentity: request.payload.sessionId !== undefined,
+            ...requestedPreset === undefined ? {} : { presetId: requestedPreset },
+            cwdIsLocal: requestedConnector === undefined,
+          })
         } catch (error: unknown) {
           if (error instanceof AgentPresetConflict) {
             return err(request, {
@@ -2146,9 +2199,24 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         // switched while blank runs a preset its header no longer names, so
         // echoing the header would contradict both the adoption this call just
         // allowed and the row `session.list` serves for the same session.
+        // The binding is written after publication because it is a session-log
+        // append, and the log only exists once the session does. The agent is
+        // still idle here, and the connector-backed providers fold the log on
+        // every operation, so the first tool call already sees it.
+        if (requestedConnector !== undefined) {
+          bindSessionConnector(agent.session, ConnectorId(requestedConnector))
+        }
         const created = ctx.agents.get(sessionId)
         const createdPreset = created === undefined ? undefined : resolveSessionPreset(created.session)
-        return ok(request, { sessionId, ...createdPreset === undefined ? {} : { agentPreset: createdPreset } })
+        // Read back rather than echoing the request: adopting a session that
+        // was already bound reports that binding, and the client needs it to
+        // know the conversation does not run on a local workspace.
+        const boundConnector = created === undefined ? undefined : effectiveConnectorId(created.session.events)
+        return ok(request, {
+          sessionId,
+          ...createdPreset === undefined ? {} : { agentPreset: createdPreset },
+          ...boundConnector === undefined ? {} : { connectorId: String(boundConnector) },
+        })
       },
 
       async history(request) {

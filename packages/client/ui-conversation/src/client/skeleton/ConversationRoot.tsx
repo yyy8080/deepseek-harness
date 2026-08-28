@@ -23,6 +23,7 @@ export function ConversationRoot({
   const inputState = useInput(s => s)
   const cwd = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.cwd)
   const summaryBlank = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.blank)
+  const connectorId = useSessions(s => sessionId === undefined ? undefined : s.byId[sessionId]?.connectorId)
   const workspaces = useWorkspaces(s => s)
   // A plugin this package cannot import (ui-model-selection) says this session cannot
   // send; its reason is already localized by whoever raised it.
@@ -81,6 +82,17 @@ export function ConversationRoot({
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
+  // A connector-bound conversation runs its files and commands on another
+  // machine: `cwd` is a directory in THAT filesystem, so no local workspace
+  // owns it and the picker has nothing to offer. The chip names the target
+  // and the directory instead, which is also what keeps the composer live —
+  // the workspace prerequisite below is already satisfied by the binding.
+  const connectorTitle = connectorId === undefined
+    ? undefined
+    : cwd === undefined || cwd === ''
+      ? connectorId
+      : t('hero.connectorChip', { connector: connectorId, folder: workspaceLabel(cwd) })
+
   // The chip is a selector; label resolution walks the flow top-down:
   //   1. a just-picked workspace (pending) → its title;
   //   2. cold start, no session yet → placeholder ("Choose workspace");
@@ -89,7 +101,8 @@ export function ConversationRoot({
   //      flash on refresh (empty cwd → placeholder);
   //   5. list ready but no owning workspace (deleted from the sidebar) →
   //      placeholder, never the deleted folder's name via cwd.
-  const chipTitle = pendingWorkspace?.title
+  const chipTitle = connectorTitle
+    ?? pendingWorkspace?.title
     ?? (sessionId === undefined
       ? undefined
       : sessionWorkspace?.title
@@ -105,8 +118,9 @@ export function ConversationRoot({
         menuOpen={pickerOpen}
         onClick={() => { setPickerOpen(open => !open) }}
         t={t}
+        {...connectorTitle === undefined ? {} : { variant: 'connector' as const }}
       />
-      {renderSlot('conversation.hero.workspace', {
+      {connectorTitle !== undefined ? null : renderSlot('conversation.hero.workspace', {
         open: pickerOpen,
         anchorRef: pickerAnchor,
         selectedId: pendingWorkspaceId ?? sessionWorkspace?.workspaceId,

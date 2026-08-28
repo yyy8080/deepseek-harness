@@ -15,6 +15,8 @@ The package is one plugin rather than three because enrollment, pack rendering, 
 | `maxConnectors` | How many targets may be attached at once. Defaults to `8`. |
 | `publicOrigin` | Origin the generated packs dial back to. Left unset, each download derives it from its own request, which is what an ordinary reverse proxy wants; set it when the proxy rewrites the `Host` it forwards. |
 | `agentProgramPath` | Absolute path of the single-file agent program `<basePath>/agent.mjs` serves. Defaults to the bundle [`dsh-connector-host`](../../connector/connector-host/README.md) ships, which `pnpm run build` produces. |
+| `chatPreset` | Agent preset a conversation started from the Connectors page is composed from. Defaults to `connector`. |
+| `probeTimeoutMs` | How long one liveness probe waits for the target to answer. Defaults to 10 seconds. |
 
 ## Routes and Remote
 
@@ -24,13 +26,15 @@ The package is one plugin rather than three because enrollment, pack rendering, 
 | `GET <basePath>/agent.mjs` | Serves the bundled agent program. It holds no secret and is identical for every target; the pack fetches it. Answers `503` when the build carries no bundle. |
 | `UPGRADE <basePath>/attach` | Accepts an agent's reversed connection over the `dsh-connector` upgrade protocol. |
 
-The `connectorPortal` Remote answers `issue` (mint an enrollment and describe its download), `list` (the ledger the Settings page renders), and `revoke` (discard an enrollment, disconnecting its agent). The browser half is [`client-ui-settings-connectors`](../../client/ui-settings-connectors/README.md).
+The `connectorPortal` Remote answers `issue` (mint an enrollment and describe its download), `list` (the ledger the Settings page renders, plus whether a conversation can be started on a machine in it), `probe` (one live round trip to an attached machine), and `revoke` (discard an enrollment, disconnecting its agent). The browser half is [`client-ui-settings-connectors`](../../client/ui-settings-connectors/README.md).
 
 ## Behavior
 
 - **Enrollment lifetimes** — the pack download is short-lived because the file carries the secret and a stale link in a shell history is the realistic leak. The attachment it authorizes is not: a target left running survives a sleeping laptop and a moving network without a new download. `issued`, `downloaded`, `attached`, and `expired` are the four words the ledger reports.
 - **Attach admission** — the token names its enrollment and carries a 24-byte secret compared in constant time. A re-dial of an already-attached enrollment replaces its own connection instead of counting against `maxConnectors`, because the previous socket is one the target itself gave up on.
 - **Adoption races** — each admitted attach owns a generation. An adoption whose handshake finishes after a later dial was admitted, or after the enrollment was revoked, closes its own link rather than taking the slot, so the newest agent always owns the registration.
+- **Liveness** — `probe` resolves and stats the attached machine's own working directory across its live link, and reports the round trip's latency, the path the TARGET resolved, and whether that path is still a directory there. The ledger's `attached` status records the last completed handshake, which a suspended, killed, or partitioned target still carries, so the two answers differ exactly when it matters. An aborted connector call does not complete — the transport tells the target to cancel and keeps waiting for an answer the target never sends — so the portal enforces `probeTimeoutMs` itself and reports `link-failed` rather than hanging.
+- **Chat availability** — `list` reports whether this deployment can start a connector-bound conversation at all. It reads `chatPreset` out of the roster on every call, so a preset authored or removed while the process runs changes the answer, and refuses with `no-preset-roster`, `preset-missing`, or `preset-not-connector-backed` when the named composition would run the conversation on this machine instead of the target.
 - **Teardown** — unmounting the plugin releases every attachment, including a target that attached but was never used by a session and whose link the registry therefore never opened.
 - **Restart** — records live in memory. A harness restart drops them, and each agent's retry loop then reports a refused attachment until the user issues a new pack, rather than a target silently serving a deployment that no longer knows why.
 
@@ -51,7 +55,8 @@ None directly; binding a session to a newly attached target changes the prefix t
 
 ## Known Limitations and Deferred Work
 
-- **Session binding stays outside the portal** — the page reports the connector id of every attached machine, and a session reaches it through an agent preset that mounts the connector-backed filesystem and subprocess providers. Choosing that target per conversation from the browser is not built.
+- **The probe measures the link, not the machine** — a completed `resolve`/`stat` proves the agent process is answering and its filesystem is readable. It says nothing about the target's load, disk, or whether a command would succeed there.
+- **Chat availability is judged from the composition text** — a preset counts as connector-backed when it names the `@deepseek-ai/dsh-fs-connector` row. A preset that mounts the row behind a condition the portal cannot evaluate reads as ready and fails at the first tool call instead.
 - **No durable ledger** — enrollments do not survive a harness restart, so a long-lived target needs a fresh pack after one.
 - **One pack per enrollment family** — the script is generated for `linux`, `macos`, or `windows`; there is no signed installer, no service unit, and no unattended-update path.
 - **No per-enrollment scope** — an attached target serves its whole working directory to any session that binds to it; the portal carries no narrower grant.

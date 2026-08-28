@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-26-connector-download-portal.md
-2026-08-26-connector-download-portal.md: ca4d2052ccb03134ec7f5b540836d3b57dc735a9
-2026-08-26-connector-download-portal.zh.md: f5960696928b534a4e41be5fd019f096551c897f
+2026-08-26-connector-download-portal.md: 3f0ae654341be945f9b8789d8e68080a9481ae99
+2026-08-26-connector-download-portal.zh.md: 73c3531629f9c5dd78e6ee9df55e49c303e35c3e

@@ -60,6 +60,6 @@ Beyond the suites, the whole path was run end to end against a locally assembled
 
 **Authenticate the download route directly, reusing the API gateway's trust fence.** Rejected because the fence belongs to the client connection package and importing another plugin's symbols across that seam is not something a host package may do. Minting the id through the authenticated Remote puts the check where it already lives.
 
-**Bind the session to a connector from this page.** Deferred, not rejected. The page reports each attached machine's connector id, and a session reaches it through an agent preset mounting the connector-backed providers. Choosing a target per conversation is a preset-composition question that belongs with the agent-preset UI, not with enrollment.
+**Bind the session to a connector from this page.** Deferred here, and settled afterwards by [the liveness and bound-chat decision](../feature/2026-08-27-connector-liveness-and-bound-chat.md): the page starts a conversation on a shipped preset that mounts the connector-backed providers, and `session.create` binds it. Enrollment still owns none of that — the portal reports whether the deployment can do it, and the gateway does it.
 
 **Persist the enrollment ledger.** Deferred. It needs a store, a revocation story that survives restart, and a decision about what a pack still valid across a redeploy means. In-memory records with a visible refusal are the smaller correct answer until a deployment asks for the larger one.

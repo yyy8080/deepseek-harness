@@ -631,10 +631,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the download path, file name, and download deadline.',
       },
       {
-        signature: '@Remote(\'list\') list(): ConnectorPortalSnapshot',
-        description: 'Read the current enrollment ledger.',
+        signature: '@Remote(\'list\') async list(): Promise<ConnectorPortalSnapshot>',
+        description: 'Read the current enrollment ledger and whether a machine in it can host a conversation.',
         parameters: [],
-        returns: 'every enrollment this deployment holds, oldest first.',
+        returns: 'every enrollment this deployment holds, oldest first, plus the composition connector conversations would be started from.',
+      },
+      {
+        signature: '@Remote(\'probe\') async probe(request: ConnectorProbeRequest): Promise<ConnectorProbeReport>',
+        description: 'Prove one attached machine\'s link is answering right now, by resolving and inspecting its own working directory across the live connection.\n\nThe ledger\'s `attached` status records the last completed handshake, which a target that has since been suspended, killed, or partitioned still carries; only a completed round trip distinguishes the two.',
+        parameters: [{ name: 'request', description: 'the enrollment whose machine to reach.' }],
+        returns: 'the round trip\'s latency and what the target reported, or the failure and the action that answers it.',
       },
       {
         signature: '@Remote(\'revoke\') async revoke(request: ConnectorRevokeRequest): Promise<ConnectorRevokeResult>',
@@ -674,8 +680,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'resolveId(request: ConnectorRequest = {}): ConnectorId',
-        description: 'Resolve which connector one capability call runs on. The session\'s last `connector/bound` event outranks the deployment default.',
-        parameters: [{ name: 'request', description: 'the calling session, when there is one.' }],
+        description: 'Resolve which connector one capability call runs on. An explicitly named connector outranks the session\'s last `connector/bound` event, which in turn outranks the deployment default.',
+        parameters: [{ name: 'request', description: 'the named connector or the calling session, when there is one.' }],
         returns: 'the resolved connector id.',
       },
       {
@@ -687,7 +693,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'tryDescribe(request: ConnectorRequest = {}): ConnectorDescriptor | undefined',
         description: 'Resolve the connector for one call without raising when nothing answers.',
-        parameters: [{ name: 'request', description: 'the calling session, when there is one.' }],
+        parameters: [{ name: 'request', description: 'the named connector or the calling session, when there is one.' }],
         returns: 'the resolved descriptor, or undefined when none can be resolved.',
       },
       {
@@ -3263,6 +3269,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
   },
   {
+    name: 'ConnectorChatAvailability',
+    declaration: 'export type ConnectorChatAvailability = {\n    readonly ready: true;\n    readonly agentPreset: string;\n} | {\n    readonly ready: false;\n    readonly reason: ConnectorChatRefusal;\n    readonly message: string;\n};',
+  },
+  {
+    name: 'ConnectorChatRefusal',
+    declaration: 'export type ConnectorChatRefusal = \'no-preset-roster\' | \'preset-missing\' | \'preset-not-connector-backed\';',
+  },
+  {
     name: 'ConnectorDescriptor',
     declaration: 'export interface ConnectorDescriptor {\n    id: ConnectorId;\n    os: ConnectorOs;\n    workdir: string;\n}',
   },
@@ -3316,7 +3330,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorPortalSnapshot',
-    declaration: 'export interface ConnectorPortalSnapshot {\n    readonly enrollments: readonly ConnectorEnrollmentView[];\n}',
+    declaration: 'export interface ConnectorPortalSnapshot {\n    readonly enrollments: readonly ConnectorEnrollmentView[];\n    readonly chat: ConnectorChatAvailability;\n}',
+  },
+  {
+    name: 'ConnectorProbeFailure',
+    declaration: 'export type ConnectorProbeFailure = \'unknown-enrollment\' | \'not-attached\' | \'link-failed\';',
+  },
+  {
+    name: 'ConnectorProbeReport',
+    declaration: 'export type ConnectorProbeReport = {\n    readonly alive: true;\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly probedAt: number;\n    readonly latencyMs: number;\n    readonly resolvedWorkdir: string;\n    readonly workdirIsDirectory: boolean;\n} | {\n    readonly alive: false;\n    readonly enrollmentId: ConnectorEnrollmentId;\n    readonly probedAt: number;\n    readonly failure: ConnectorProbeFailure;\n    readonly message: string;\n};',
+  },
+  {
+    name: 'ConnectorProbeRequest',
+    declaration: 'export interface ConnectorProbeRequest {\n    readonly enrollmentId: ConnectorEnrollmentId;\n}',
   },
   {
     name: 'ConnectorProcessEvents',
@@ -3332,7 +3358,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectorRequest',
-    declaration: 'export interface ConnectorRequest {\n    session?: Session;\n}',
+    declaration: 'export interface ConnectorRequest {\n    session?: Session;\n    connectorId?: ConnectorId;\n}',
   },
   {
     name: 'ConnectorRevokeRequest',
